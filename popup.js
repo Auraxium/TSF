@@ -1,16 +1,32 @@
+//#region init
 let cred = {};
 let streamer_cache = {}
 let favorites = {};
 let config = {}
 let later = {}
 let cache = {}
-let imgs = []
 
 let port = 'https://misc.auraxium.dev'//'http://localhost:3145' //
 let lives_save = {}
 let temp;
 let icon_size = 28;
 let current_page = '';
+let search = ''
+
+let fetches = []
+
+let debounce = function (cb, delay = 1000) {
+  let timeout;
+
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => {
+      cb(...args);
+    }, delay);
+  };
+};
+
+let keys = {}
 
 let icons = {
   star: (e, n) => `<svg title="favorite" data-user_login="${e.user_login}" xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-star star" width="${n || 18}" height="${n || 18}" 
@@ -54,6 +70,16 @@ let icons = {
 </svg>`
 }
 
+let contexts = {
+  'vods': e => {
+    let ctrl = e.ctrlKey;
+    axi(`https://api.twitch.tv/helix/videos?type=archive&first=1&user_id=${streamer_cache[e.target.dataset.user_login].id}`).then(res => {
+      ctrl ? window.open(`https://www.twitch.tv/videos/${res.data[0].id}`) : chrome.runtime.sendMessage({ tab: `https://www.twitch.tv/videos/${res.data[0].id}` })
+      window.close();
+    })
+  },
+}
+
 let clickable = {
   fix: e => {
     for (let l in later) {
@@ -62,26 +88,40 @@ let clickable = {
     }
     save({ later })
   },
-  'get-vods': (event) => {
+  'get-vods': async (event) => {
+    // await fetchForElse(Object.keys(favorites).filter(e => !streamer_cache[e]))
     Promise.all(Object.keys(favorites).map(e => axi(`https://api.twitch.tv/helix/videos?type=archive&first=2&user_id=${streamer_cache[e]?.id || 123}`))).then(res => {
+      // if(!res?.data?.[0]) return console.log('no data', res);
       let lives = event.target.dataset.live.split(',').reduce((acc, e) => { acc[e] = 1; return acc }, {});
       res = res.map(e => {
-        if (!e.data[0]?.user_login) return null;
+        if (!e.data[0]?.user_login) return console.log('no data', res);
         return (!lives[e.data[0].user_login]) ? e.data[0] : null; //e.data[1] || e.data[0];
       }).filter(e => e);
       // console.log(res);
 
       let now = Date.now()
-      event.target.outerHTML = `<div style="font-size: 18px; border-bottom: 1px solid">Vods of Favorites (${res.length})</div>` + res.sort((a, b) => (new Date(b.created_at).getTime() + durToSecs(b.duration)) - (new Date(a.created_at).getTime() + durToSecs(a.duration))).map(el => vod(el, now)).join("");
+      event.target.outerHTML = `<div style="font-size: 18px; border-bottom: 1px solid">Vods of Favorites (${res.length})</div>` + res.sort((a, b) => (new Date(b.created_at).getTime() + durToSecs(b.duration)) - (new Date(a.created_at).getTime() + durToSecs(a.duration))).map(el => vod(el, now, 0, !search.length || el.user_login.includes(search))).join("");
     })
   },
   'get-offline': async (e) => {
-    let offs = await axi(`https://api.twitch.tv/helix/channels/followed?user_id=${cred.id}`)
-    let str = `<div style="font-size: 18px; border-bottom: 1px solid" >Offline (${offs.data.length})</div>`
-    str += offs.data.map(e => channel(e)).join("") //.filter(e => !lives_save[e.user_login])
+    let els = []
+    let offs = await axi(`https://api.twitch.tv/helix/channels/followed?first=100&user_id=${cred.id}`)
+    els.push(...offs.data)
+    while (offs.pagination?.cursor) {
+      offs = await axi(`https://api.twitch.tv/helix/channels/followed?first=100&user_id=${cred.id}&after=${offs.pagination.cursor}`)
+      els.push(...offs.data)
+    }
+
+    let str = `<div style="font-size: 18px; border-bottom: 1px solid">Offline (${els.length})</div>`;
+    str += els.map(e => channel(e, !search.length || e.broadcaster_login.includes(search))).join(""); //.filter(e => !lives_save[e.user_login])
+
+    // console.log(els);
     e.target.outerHTML = str;
 
-    fetchForCache()
+    // fetchForCache()
+  },
+  'get-more': e => {
+    window.open(`https://www.twitch.tv/${e.target.dataset.user_name}/videos?filter=archives&sort=time`)
   },
   stream: (e) => {
     if (e.ctrlKey) return window.open(`https://twitch.tv/${e.target.dataset.user_login}`)
@@ -105,7 +145,10 @@ let clickable = {
     }
 
     e.target.outerHTML = icons.later(e, 1, e.target.dataset.vod_id);
-    if (e.target.dataset.vod_id) return later[tag] = { vod_id: tag, date };
+    if (e.target.dataset.vod_id) {
+      later[tag] = { vod_id: tag, date };
+      return save({ later }, 0);
+    }
 
     later[e.target.dataset.user_login] = { date };
     axi(`https://api.twitch.tv/helix/videos?type=archive&first=1&user_id=${streamer_cache[e.target.dataset.user_login]?.id || 123}`).then(res => {
@@ -139,16 +182,19 @@ let clickable = {
   },
   trash: e => {
     console.log(e.target.dataset.vod_id, later[e.target.dataset.vod_id], later);
-    let {vod_id, user_login} = e.target.dataset;
+    let { vod_id, user_login } = e.target.dataset;
     delete later[vod_id];
-    if(later[user_login]?.vod_id == vod_id) delete later[user_login]
+    if (later[user_login]?.vod_id == vod_id) delete later[user_login]
     save({ later }, 1);
     e.target.parentElement.parentElement.parentElement.parentElement.remove()
   },
   'config-but': e => nav('config'),
   'later-but': e => nav('later'),
   'main-but': e => nav('main'),
-  'vods': (e) => nav('vods', e.target.dataset.user_login),
+  'vods': (e) => {
+    nav('vods', e.target.dataset.user_login);
+  },
+  'x-but': e => clearSearch(),
   logout: e => {
     delete cred.access_token;
     save({ cred });
@@ -161,14 +207,14 @@ let clickable = {
     favorites = {};
     config = {}
     later = {}
-    save({cred, streamer_cache, favorites, config, later})
+    save({ cred, streamer_cache, favorites, config, later })
     document.getElementById('out').style.display = 'flex';
     document.getElementById('in').style.display = 'none';
   },
   cbut: e => {
     let { type } = e.target.dataset
     if (type == 'fs') {
-      let data = JSON.stringify({ cred, favorites, config, later });
+      let data = JSON.stringify({ favorites, config, later });
       let pom = document.createElement('a');
       pom.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(data));
       pom.setAttribute('download', 'TSF' + new Date().toLocaleString() + '.json')
@@ -196,7 +242,7 @@ let clickable = {
           favorites = data.favorites;
           config = data.config;
           later = data.later;
-          if (cred.login != data.cred.login) cred = data.cred;
+          // if (cred.login != data.cred.login) cred = data.cred;
 
           nav('main')
           pom.remove()
@@ -211,7 +257,7 @@ let clickable = {
 
     if (type == 'cs') {
       e.target.outerHTML = '<div>saved</div>';
-      let data = { cred, favorites, config, later };
+      let data = { favorites, config, later };
       fetch(port + '/tsfSave', {
         method: 'POST',
         body: JSON.stringify({ login: cred.login, data: data }),
@@ -229,49 +275,70 @@ let clickable = {
       }).then(res => res.json()).then(res => {
         if (!res.data.data) return e.target.outerHTML = 'No Data Found'
         let data = JSON.parse(res.data.data);
-        save(data)
+        console.log('load data:', data);
+
+        save({ favorites: data.favorites, later: data.later })
         // streamer_cache = data.streamer_cache;
         favorites = data.favorites;
         config = data.config;
         later = data.later;
-        if (cred.login != data.cred.login) cred = data.cred;
+        // if (cred?.login != data.cred.login) cred = data.cred;
 
         nav('main')
       })
     }
-  }
+  },
+  debug: e => console.log('debug:', { cred, streamer_cache, favorites, config, later, cache, fetches })
 }
 
 let page_cb = {
   main: async () => {
-    let lives = await axi(`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`);
-    // console.log('lives', lives);
+    let [lives, current] = await Promise.all([axi(`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`), runtimeFetch({ current: 1 })]);
+    console.log('lives', lives, cred);
+    if (!lives?.data?.length) {
+      console.log('fetch err: ', lives, current);
+      delete cache[`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`]
+      return $('[page="main"]').innerHTML = '<div class="center" style="font-size: 24px; margin-top: 128px">Twitch API failed try again later</div>'
+    }
     lives_save = lives.data.reduce((acc, e) => { acc[e.user_login.toLowerCase()] = 1; return acc }, {})
 
     let favs = lives.data.filter(e => favorites[e.user_name.toLowerCase()]);
     let str = "";
-    // if (favs.length)
-    str += `<div class="label" style="font-size: 18px">Favorites (${favs.length})</div>${favs.map(e => stream(e)).join("")}`;
-    if(Object.keys(favorites).length)
-    str += `<div class="get-vods button bg-dark hl cursor" data-live="${lives.data.map(e => e.user_login).join()}">Get Vods</div>`;
+    console.log(current);
+
+    if (current) {
+      if (current.includes('videos')) {
+        let { data } = await axi(`https://api.twitch.tv/helix/videos?type=archive&first=1&id=${current.split('/').pop()}`);
+        if (data?.[0])
+          str += `<div class="label" style="font-size: 18px; border-bottom: 1px solid">Currently watching </div>${vod(data[0])}`;
+      }
+      else if (lives.data.find(e => current.split('/').pop() == e.user_login)) str += `<div class="label" style="font-size: 18px; border-bottom: 1px solid">Currently watching </div>${stream(lives.data.find(e => current.split('/').pop() == e.user_login))}`;
+    }
+    str += `<div class="label" style="font-size: 18px; border-bottom: 1px solid">Favorites (${favs.length})</div>${favs.map(e => stream(e)).join("")}`;
+    if (Object.keys(favorites).length)
+      str += `<div class="get-vods button bg-dark hl cursor" data-live="${lives.data.map(e => e.user_login).join()}">Get Vods</div>`;
     str += `<div class="label" style="font-size: 18px; border-bottom: 1px solid">Streams (${lives.data.length})</div> ${lives.data.map(e => stream(e)).join("")}`;
     str += `<div class="button bg-dark hl cursor get-offline">Show All</div>`
 
     document.querySelector('.main').innerHTML = str;
-    fetchForCache()
+    // fetchForCache()
   },
   later: async () => {
-    console.log('later', later);
+    console.log('later', { ...later });
     let now = Date.now();
+    Object.entries(later).forEach(e => now > e[1].date + 1000 * 60 * 60 * 24 * 61 ? delete later[e[0]] : null)
     let vods = await axi(`https://api.twitch.tv/helix/videos?type=archive&first=1${Object.values(later).map(e => '&id=' + (+e.vod_id || 123)).join("")}`);
     let str = vods.data.map(e => vod(e, now)).join("")
+    // console.log(Object.values(later).length);
     document.querySelector('[page="later"]').innerHTML = str;
   },
   vods: async (arg) => {
+    // clearSearch()
     document.querySelector('[page="vods"]').innerHTML = '';
     let str = `<div style="font-size: 24px"></div>`
     let vods = await axi(`https://api.twitch.tv/helix/videos?type=archive&first=10&user_id=${streamer_cache[arg].id}`)
     str += vods.data.map(e => vod(e)).join("");
+    str += `<div class="get-more button bg-dark hl cursor" data-user_name="${arg}">More</div>`
     document.querySelector('[page="vods"]').innerHTML = str;
   },
   config: async () => {
@@ -279,7 +346,7 @@ let page_cb = {
       <div class="flex gap space-evenly">
         <div class="button hl cbut" data-type="cs" style="font-size: 14px; width: 150px; height: 45px">Cloud Save</div>
         <div class="button hl cbut" data-type="cl" style="font-size: 14px; width: 150px; height: 45px">Cloud Load</div>
-        </div>
+      </div>
       <div class="flex gap space-evenly">
         <div class="button hl cbut" data-type="fs" style="font-size: 14px; width: 150px; height: 45px">File Save</div>
         <div class="button hl cbut" data-type="fl" style="font-size: 14px; width: 150px; height: 45px">File Load</div>
@@ -288,26 +355,36 @@ let page_cb = {
     str += `<div class="flex space-evenly">
       <div style="height: 40px" class="logout button cursor bg-purple">Logout</div>
       <div style="height: 40px" class="reset button cursor bg-red">Reset Profile</div>
-    </div>`
+    </div>
+    
+    <div class="button hl debug">Debug</div>
+    `
+
     document.querySelector('[page="config"]').innerHTML = str;
   },
 
 }
 
+//#endregion
+
+
 //#region UI
 function stream(e) {
   if (!e) return;
-  let img;
   let later_on;
 
   if (!streamer_cache[e.user_login]) {
-    img = e.user_login;
-    imgs.push({ id: e.user_id, login: e.user_login, cb: img })
-  } else img = streamer_cache[e.user_login].profile_image_url;
+    let uid = Math.random().toString(27).slice(5);
+    fetches.push({ type: 'stream', e, uid, login: e.user_login });
+    fetchForCache()
+    return `<div a${uid} ></div>`
+  }
+
+  let img = streamer_cache[e.user_login].profile_image_url;
 
   later[e.user_login] && Date.now() < later[e.user_login].date ? later_on = 1 : delete later[e.user_login];
 
-  return `<div title="${e.title}" class="stream hl" data-user_login="${e.user_login}">
+  return `<div title="${escapeHTML(e.title)}" class="stream hl" data-user_login="${e.user_login}">
 
   <div class="img-containter"  style="width: 25%; ">
     <img class="thumbnail" src="https://static-cdn.jtvnw.net/previews-ttv/live_user_${e.user_login}.jpg" alt="" class="" />
@@ -342,10 +419,16 @@ function stream(e) {
   </div>`
 }
 
-function vod(e, now = Date.now(), src) {
+function vod(e, now = Date.now(), src, show = 1, vods = 1) {
   if (!e) return;
+  if (!streamer_cache[e.user_login]) {
+    let uid = Math.random().toString(27).slice(5);
+    fetches.push({ type: 'vod', e, uid, login: e.user_login });
+    fetchForCache()
+    return `<div a${uid} ></div>`
+  }
 
-  return `<div title="${e.title}" class="vod hl" data-vod_id="${e.id}" data-user_login="${e.user_login}">
+  return `<div title="${escapeHTML(e.title)}" class="vod hl" data-vod_id="${e.id}" data-user_login="${e.user_login}" style="display: ${show ? 'flex' : 'none'};">
   
     <div class="img-containter"  style="width: 25%; ">
       <img class="thumbnail" src="${src || e.thumbnail_url.slice(0, -22)}360x200.${e.thumbnail_url.split('.').at(-1)}" alt="" class="" />
@@ -353,7 +436,7 @@ function vod(e, now = Date.now(), src) {
   
       <div class="info " style="width: 60%;  ">
         <div class="truncate text-center" style="font-size: 18px; height:40% ">
-         <img class="profile_pic" src="${streamer_cache[e.user_login].profile_image_url}" />
+         <img class="profile_pic" src="${streamer_cache[e.user_login]?.profile_image_url}" />
          ${favorites[e.user_name.toLowerCase()] ? icons.starFilled(e) : icons.star(e)}
          ${e.user_name}
         </div>
@@ -380,19 +463,24 @@ function vod(e, now = Date.now(), src) {
     </div>`
 }
 
-function channel(e) {
-  if (!e) return;
+function channel(e, show) {
+  if (!e) return console.log(e);
 
   let img;
   if (!streamer_cache[e.broadcaster_login]) {
-    img = e.broadcaster_login;
-    imgs.push({ id: e.broadcaster_id, login: e.broadcaster_login, cb: img })
-  } else img = streamer_cache[e.broadcaster_login].profile_image_url;
+    let uid = Math.random().toString(27).slice(5);
+    fetches.push({ type: 'channel', e, uid, login: e.broadcaster_login });
+    fetchForCache()
+    return `<div a${uid} ></div>`
+  }
+
+  img = streamer_cache[e.broadcaster_login].profile_image_url;
 
   let uj = { user_login: e.broadcaster_login };
+  // console.log(show);
 
   return `
-    <div class="channel">
+    <div class="channel" data-user_login="${e.broadcaster_name}" style="display: ${show ? 'flex' : 'none'}">
       <img src="${img}" class="channelImg" />
       ${favorites[e.broadcaster_login] ? icons.starFilled(uj, 24) : icons.star(uj, 24)}
       ${e.broadcaster_name}
@@ -441,6 +529,7 @@ function durToSecs(s) {
 }
 
 function nav(s, arg) {
+  // clearSearch()
   [...document.querySelectorAll('[page]')].forEach(e => e.style.display = 'none');
   document.querySelector(`[page="${s}"]`).style.display = 'flex';
   page_cb[s] && page_cb[s](arg);
@@ -448,25 +537,30 @@ function nav(s, arg) {
 }
 
 async function axi(s) {
-  if(cache[s]) {
-    if(cache[s].expire < Date.now()) delete cache[s]; 
+  if (cache[s]) {
+    if (cache[s].expire < Date.now()) delete cache[s];
     else return cache[s].res;
   }
   let ax = await fetch(s, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${cred.access_token}`,
-      'Client-Id': 'yumlrqfeiz2kh0x43c1h6gviqn752w'
+      'Client-Id': '0helgn8mxggk3ffv53sxgqrmkdojb3'
     }
   }).then(res => res.json());
   cache[s] = { expire: Date.now() + 60000, res: ax }
-  save({cache})
+  save({ cache })
   return ax;
+}
+
+function $(s) {
+  let a = [...document.querySelectorAll(s)];
+  return !a.length ? null : a.length == 1 ? a[0] : a
 }
 
 async function auth() {
   chrome.runtime.sendMessage({ authing: 1 }) //channel%3Amanage%3Apolls+channel%3Aread%3Apolls
-  let popup = window.open(`https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=yumlrqfeiz2kh0x43c1h6gviqn752w&redirect_uri=${port}/twotch&scope=user%3Aread%3Afollows&state=${window.location.href}`, 'popup', 'popup=true');
+  let popup = window.open(`https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=0helgn8mxggk3ffv53sxgqrmkdojb3&redirect_uri=${port}/twotch&scope=user%3Aread%3Afollows&state=${window.location.href}`, 'popup', 'popup=true');
   const checkPopup = setInterval(() => {
     chrome.runtime.sendMessage({ get: 1 }, res => {
       if (!res) return;
@@ -477,10 +571,9 @@ async function auth() {
     clearInterval(checkPopup);
     axi('https://api.twitch.tv/helix/users').then(res => {
       console.log(res);
-      const { login, profile_image_url, id } = res.data[0];
-      cred = { ...cred, login, profile_image_url, id };
+      cred = { ...cred, ...res.data[0] };
       console.log(cred);
-      chrome.storage.local.set({ cred: cred });
+      save({ cred });
       // fetch(port + '/tsfLoad', {
       //   method: 'POST',
       //   body: JSON.stringify({ login: cred.login }),
@@ -504,21 +597,33 @@ async function auth() {
   }, 400);
 }
 
-async function fetchForCache() {
-  if (imgs.length) {
-    let res = await axi('https://api.twitch.tv/helix/users?' + imgs.map(e => `id=${e.id}&`).join(""));
-    console.log('for imgs: ', res);
-    res.data.forEach(e => {
-      streamer_cache[e.login] = e;
-      document.querySelector(`[src="${e.login}"]`).src = e.profile_image_url;
-    });
-    save({ streamer_cache })
-    imgs = [];
-  }
+function escapeHTML(text) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
+
+var fetchForCache = debounce(async () => {
+  if (fetches.length) {
+    if (fetches.length > 99) fetches.length = 99;
+    let res = await axi('https://api.twitch.tv/helix/users?' + fetches.map(e => `login=${e.login}&`).join("")).catch(console.log);
+    console.log('getty: ', res);
+    res.data.forEach(e => streamer_cache[e.login] = e);
+    save({ streamer_cache })
+    fetches.forEach(el => document.querySelector(`[a${el.uid}]`).outerHTML = el.type == 'stream' ? stream(el.e) : el.type == 'vod' ? vod(el.e) : channel(el.e, 1));
+    fetches = [];
+  }
+}, 750);
 
 function logout() {
   chrome.storage.local.set({ streamer_cache: {}, cred: {} })
+}
+
+async function runtimeFetch(json) {
+  return new Promise((y, n) => chrome.runtime.sendMessage(json, res => y(res)))
 }
 
 async function main() {
@@ -530,6 +635,10 @@ async function main() {
     chrome.storage.local.get(['later']).then(res => res.later || {}),
     chrome.storage.local.get(['cache']).then(res => res.cache || {}),
   ]);
+
+  let now = Date.now()
+  if (now > (cache.expire || 0)) cache = { expire: Date.now() + 1000 * 60 * 60 * 24 * 3 }
+
   // console.log(cred); 
   if (!cred || !cred.access_token) {
     document.getElementById('out').style.display = 'flex';
@@ -556,6 +665,17 @@ document.addEventListener('click', function (e) {
   if (e.target?.classList) [...e.target.classList].forEach(el => clickable[el] && clickable[el](e));
 })
 
+document.addEventListener('contextmenu', function (e) {
+  // console.log(e.target);
+  if (e.target?.classList) [...e.target.classList].forEach(el => {
+    if (!contexts[el]) return;
+    console.log(el);
+    e.preventDefault();
+    e.stopPropagation();
+    contexts[el](e);
+  });
+})
+
 document.addEventListener('mouseover', e => {
   if (e.target?.classList?.contains('hl')) {
     e.target.style.backgroundColor = 'rgb(100, 100, 100)'
@@ -566,6 +686,36 @@ document.addEventListener('mouseout', e => {
   if (e.target?.classList?.contains('hl')) {
     e.target.style.backgroundColor = 'rgb(0, 0, 0)'
   }
+})
+
+function clearSearch() {
+  search = '';
+  document.querySelector('#search').value = "";
+  [...document.querySelectorAll('[data-user_login]')].forEach(e => e.style.display = 'flex')
+}
+
+let bounceSearch = debounce(s => {
+  s = s.toLowerCase();
+  [...document.querySelectorAll(`div[data-user_login]`)].forEach((el) => {
+    // console.log(s, el.getAttribute('data-user_login'), el.getAttribute('data-user_login').toLowerCase().includes(s));
+    if (!el.style) return;
+    el.style.display = el.getAttribute('data-user_login').toLowerCase().includes(s) ? 'flex' : 'none';
+  })
+}, 400);
+
+document.querySelector('#search').addEventListener('keyup', (e) => {
+  search = e.target.value;
+  bounceSearch(e.target.value);
+  // search(e.target.value)
+  // console.log('???????????????')
+})
+
+document.addEventListener('keydown', e => {
+  keys[e.key] = 1
+})
+
+document.addEventListener('keyup', e => {
+  keys[e.key] = 0
 })
 
 // let sb = document.querySelector('.scroll-bar')
@@ -589,7 +739,7 @@ document.addEventListener('mouseout', e => {
 //#endregion
 
 /*notes:
-cant use get stream for vods
+cant use get stream() for vods
 */
 
 /* done
