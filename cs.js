@@ -17,25 +17,20 @@ let current_name;
 let lon = '#813ade'
 let la;
 
+let observer;
+
 let cache = {}
 let ctx = {}
 let channels = {}
+let cur_ctx;
 
-var callback = function (mutationsList, observer) {
-  for (var mutation of mutationsList) {
-    mutation.addedNodes.forEach(function (node) {
-      if (node.matches && list.some(e => node.matches(e))) {
-        // console.log('mat');
-        // [...document.querySelectorAll('.main *')].style.zIndex = -1
-        if (!document.querySelector('.tsf-favs'))
-          document.querySelector('.simplebar-content').insertAdjacentHTML('afterbegin', `<div class="tsf-favs" style="padding: 2px; margin-top: 9px ">
-            </div>`);
-        getFavs();
-        addBar()
-      }
-    });
-  }
-};
+function check() {
+  if (!document.querySelector('.tsf-favs'))
+    document.querySelector('.simplebar-content').insertAdjacentHTML('afterbegin', `<div class="tsf-favs" style="padding: 2px; margin-top: 9px ">
+      </div>`);
+  getFavs();
+  addBar()
+}
 
 let icons = {
   later: (e = {}) => {
@@ -215,11 +210,11 @@ function hideThumbnail(event) {
 function stream(e, now = Date.now()) {
   if (!e) return;
   // console.log(e);
-  let img = streamer_cache[e.user_login].profile_image_url;
-  if (!streamer_cache[e.user_login]) {
+  let img = streamer_cache[e.user_login]?.profile_image_url || null;
+  if (!img) {
     img = e.user_login;
     imgs.push({ id: e.user_id, login: e.user_login, cb: img })
-  } else img = streamer_cache[e.user_login].profile_image_url;
+  } //else img = streamer_cache[e.user_login].profile_image_url;
 
   let sumb = document.querySelector(`#sumb_${e.user_login}`)
   if (!sumb) document.querySelector('.Layout-sc-1xcs6mc-0').prepend(icons.sumb(e));
@@ -251,17 +246,17 @@ function stream(e, now = Date.now()) {
 {/* <div class="ScChannelStatusIndicator-sc-bjn067-0 kqWDUJ tw-channel-status-indicator"></div> */ }
 
 async function getFavs(force) {
-  if(force) delete cache[`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`];
+  // if(force) delete cache[`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`];
 
   lives = await axi(`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`);
-  console.log('lives', lives);
+  // console.log('lives', lives);
   if (lives == 0) return;
-  if (lives.cached && document.querySelector('.tsf-favs')?.offsetHeight > 15) return;
+  if (lives.cached && !force && document.querySelector('.tsf-favs')?.offsetHeight > 15) return;
   if (!lives?.data?.length) return delete cache[`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`]
   // if(lives.cached && document.querySelector('.tsf-favs')) return;
 
   let { now } = lives;
-  channels = lives.data.reduce((acc,e) => {acc[e.user_login] = 1; return acc} , {})
+  channels = lives.data.reduce((acc, e) => { acc[e.user_login] = 1; return acc }, {})
   // console.log('channles:', channels, lives);
   let favs = lives.data.filter(e => favorites[e.user_name.toLowerCase()]);
 
@@ -318,9 +313,10 @@ async function addBar() {
   document.querySelector('.Layout-sc-1xcs6mc-0').prepend(icons.ctx());
 }
 
+
 async function main() {
-  let observer = new MutationObserver(callback);
-  observer.observe(document.body, { childList: true, subtree: true });
+  // let observer = new MutationObserver(callback);
+  // observer.observe(document.body, { childList: true, subtree: true });
 
   [streamer_cache, favorites, cred, config, later] = await Promise.all([
     chrome.storage.local.get(['streamer_cache']).then(res => res.streamer_cache || {}),
@@ -330,15 +326,37 @@ async function main() {
     chrome.storage.local.get(['later']).then(res => res.later || {}),
   ]);
 
-  if (!cred.access_token) return console.log('TSF no access token');
   if (config.no_cs) return console.log('TSF page disabled');
+  if (!cred.access_token) {
+    let getAuths = () => {
+      if (!document.querySelector('.tsf-favs') || document.querySelector('.tsf-favs').offsetHeight < 20) {
+        document.querySelector('.simplebar-content').insertAdjacentHTML('afterbegin', `<div class="tsf-favs" style="padding: 2px; margin-top: 9px ">
+        <h2 style="font-size: 14px; padding: 8px">TSF FAVORITES</h2>
+        <div style="width: 100%; display: flex; justify-content: center">
+         <div class="auth" style="border: 1px solid white; background-color: blac,k; padding: 8px; cursor: pointer;" >Authorize</div>
+        </div> 
+        </div>`);
+      }
+    }
 
-  document.querySelector('.simplebar-content').insertAdjacentHTML('afterbegin', `<div class="tsf-favs" style="padding: 2px; margin-top: 9px "></div>`);
+    let check = () => {
+      if (!cred.access_token && !document.querySelector('.tsf-favs')) getAuths();
+    }
+    observer = setInterval(check, 2000);
+    Delay(1000 * 60 * 1).then(() => clearInterval(observer))
+
+    return console.log('TSF no access token');
+  }
+
+  // document.querySelector('.simplebar-content').insertAdjacentHTML('afterbegin', `<div class="tsf-favs" style="padding: 2px; margin-top: 9px "></div>`);
 
   getFavs();
   interval = setInterval(getFavs, 1000 * 60 * 2.5);
 
   addBar()
+
+  observer = setInterval(check, 2000);
+  Delay(1000 * 60 * 1).then(() => clearInterval(observer))
 }
 
 async function Delay(secs) {
@@ -352,28 +370,34 @@ main();
 //#region events
 
 document.addEventListener('contextmenu', (e) => {
-  let temp = e.target
+  let temp = e.target;
   do {
     if (temp.matches('a')) break;
     temp = temp.parentElement;
   } while (temp)
   if (!temp) return;
   // console.log(temp);
-  e.preventDefault()
-  e.stopPropagation()
 
-  let user_login = temp.getAttribute('href').split('/').at(-1)
+  let split = temp.getAttribute('href').split('/');
+  if (split.length != 2) return;
+  let user_login = split.at(-1);
   if (!user_login) return;
+  if (user_login == cur_ctx) return;
 
   if (!document.querySelector('#tsf_ctx')) return //document.querySelector('.Layout-sc-1xcs6mc-0').prepend(icons.ctx());
+
+  cur_ctx = user_login;
+
+  e.preventDefault()
+  e.stopPropagation()
   // ctx = document.querySelector('#tsf_ctx')
-  ctx.style.left = e.pageX + 'px'
-  ctx.style.top = e.pageY + 'px'
+  ctx.style.left = e.pageX - 4 + 'px'
+  ctx.style.top = e.pageY - 4 + 'px'
   ctx.style.display = 'flex'
   ctx.setAttribute('user_login', user_login)
 
   ctx.innerHTML = `
-    ${streamer_cache[user_login] ? `<img src="${streamer_cache[user_login]?.profile_image_url || -1}" style="width: 50px; padding: 4px; aspect-ratio: 1; border-radius: 99%" />` : '' }
+    ${streamer_cache[user_login] ? `<img src="${streamer_cache[user_login]?.profile_image_url || -1}" onclick="window.this" style="width: 50px; padding: 4px; aspect-ratio: 1; border-radius: 99%" />` : ''}
     ${channels[user_login] ? icons.star({ user_login }).outerHTML : ''}
     ${icons.vods({ user_login }).outerHTML}
     ${icons.later({ user_login, ind: -1 }).outerHTML}
@@ -407,7 +431,7 @@ let clickable = {
   },
   'icon-tabler-movie': (e) => {
     let el = e.target.firstElementChild;
-    e.ctrlKey ? window.open(`https://www.twitch.tv/${el.getAttribute('user_login')}/videos?filter=archives&sort=time`) : window.location = `https://www.twitch.tv/${el.getAttribute('user_login')}/videos?filter=archives&sort=time`;
+    window.open(`https://www.twitch.tv/${el.getAttribute('user_login')}/videos?filter=archives&sort=time`);
   },
   'icon-tabler-clock-hour-4': async e => {
     let el = e.target.firstElementChild;
@@ -460,16 +484,57 @@ let clickable = {
       });
     }
     save({ later })
+  },
+  'auth': e => {
+    let popup = window.open('https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=0helgn8mxggk3ffv53sxgqrmkdojb3&redirect_uri=https://misc.auraxium.dev/twotch&scope=user%3Aread%3Afollows&state=${window.location.href}', 'popup', 'popup=true');
+
+    let auth = (event) => {
+      // console.log(event.data);
+      if (!event.data?.slice || event.data.slice(0, 4) != 'tsf_') return;
+      let ind = event.data.indexOf('access_token=');
+      // console.log(ind);
+      if (ind == -1) {
+        window.removeEventListener('message', auth)
+        popup.close()
+        return
+      }
+      let ac = event.data.slice(ind + 13, event.data.length)
+      if (ac == 'null') {
+        window.removeEventListener('message', auth)
+        popup.close()
+        return
+      }
+      // console.log('ac:', ac);
+
+      window.removeEventListener('message', auth)
+      popup.close()
+
+      cred.access_token = ac
+      axi('https://api.twitch.tv/helix/users').then(res => {
+        console.log(res);
+        cred = { ...cred, ...res.data[0] };
+        console.log(cred);
+        save({ cred });
+        main()
+        // window.location.reload()
+      })
+    }
+
+    window.addEventListener('message', auth, false);
   }
 }
 
 document.addEventListener('click', e => {
   if (e.target?.classList) [...e.target.classList].forEach(el => clickable[el] && clickable[el](e));
-  ctx?.style ? ctx.style.display = 'none' : '';
+  if(ctx?.style?.display == 'flex') {
+    ctx.style.display = 'none'
+    cur_ctx = ''
+  } 
 })
 
 let ctxable = {
   'icon-tabler-movie': async (e) => {
+    let ctrl = e.ctrlKey;
     let el = e.target.firstElementChild;
     let user_login = el.getAttribute('user_login') || document.querySelector('h1.tw-title')?.innerHTML.toLowerCase() || null;
     e.preventDefault();
@@ -480,8 +545,9 @@ let ctxable = {
       save({ streamer_cache })
     });
     let id = streamer_cache[user_login].id
-    axi(`https://api.twitch.tv/helix/videos?type=archive&first=1&user_id=${id}`).then(res => e.ctrlKey ? window.open(`https://www.twitch.tv/videos/${res.data[0].id}`) : window.location = `https://www.twitch.tv/videos/${res.data[0].id}`);
-  }  
+    axi(`https://api.twitch.tv/helix/videos?type=archive&first=1&user_id=${id}`).then(res => window.open(`https://www.twitch.tv/videos/${res.data[0].id}`));
+    // .then(res => ctrl ? window.open(`https://www.twitch.tv/videos/${res.data[0].id}`) : window.location = `https://www.twitch.tv/videos/${res.data[0].id}`);
+  }
 }
 
 document.addEventListener('contextmenu', e => {

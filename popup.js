@@ -4,6 +4,7 @@ let streamer_cache = {}
 let favorites = {};
 let config = {}
 let later = {}
+let channels = []
 let cache = {}
 
 let port = 'https://misc.auraxium.dev'//'http://localhost:3145' //
@@ -14,6 +15,8 @@ let current_page = '';
 let search = ''
 
 let fetches = []
+let lives = {}
+let favs = [];
 
 let debounce = function (cb, delay = 1000) {
   let timeout;
@@ -44,7 +47,7 @@ let icons = {
   <path d="M12 12l3 2" />
   <path d="M12 7v5" />
 </svg>`,
-  vods: (e) => `<svg data-user_login="${e.user_login}" xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-movie vods" width="${icon_size}" height="${icon_size}" viewBox="0 0 24 24" stroke-width="1.5" stroke="#ffffff" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  vods: (e) => `<svg data-user_login="${e.user_login}" xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-movie vods-but" width="${icon_size}" height="${icon_size}" viewBox="0 0 24 24" stroke-width="1.5" stroke="#ffffff" fill="none" stroke-linecap="round" stroke-linejoin="round">
 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
 <path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" />
 <path d="M8 4l0 16" />
@@ -71,7 +74,7 @@ let icons = {
 }
 
 let contexts = {
-  'vods': e => {
+  'vods-but': e => {
     let ctrl = e.ctrlKey;
     axi(`https://api.twitch.tv/helix/videos?type=archive&first=1&user_id=${streamer_cache[e.target.dataset.user_login].id}`).then(res => {
       ctrl ? window.open(`https://www.twitch.tv/videos/${res.data[0].id}`) : chrome.runtime.sendMessage({ tab: `https://www.twitch.tv/videos/${res.data[0].id}` })
@@ -89,19 +92,16 @@ let clickable = {
     save({ later })
   },
   'get-vods': async (event) => {
-    // await fetchForElse(Object.keys(favorites).filter(e => !streamer_cache[e]))
-    Promise.all(Object.keys(favorites).map(e => axi(`https://api.twitch.tv/helix/videos?type=archive&first=2&user_id=${streamer_cache[e]?.id || 123}`))).then(res => {
-      // if(!res?.data?.[0]) return console.log('no data', res);
-      let lives = event.target.dataset.live.split(',').reduce((acc, e) => { acc[e] = 1; return acc }, {});
-      res = res.map(e => {
-        if (!e.data[0]?.user_login) return console.log('no data', res);
-        return (!lives[e.data[0].user_login]) ? e.data[0] : null; //e.data[1] || e.data[0];
-      }).filter(e => e);
-      // console.log(res);
+    // await fetchForElse(Object.keys(favorites).filter(e => !streamer_cache[e])
+    let res = await Promise.all(Object.keys(favorites).filter(e => !lives_save[e]).map(e => axi(`https://api.twitch.tv/helix/videos?type=archive&first=1&user_id=${streamer_cache[e]?.id || 123}`)));
+    if (!res?.length) return console.log('no res');
 
-      let now = Date.now()
-      event.target.outerHTML = `<div style="font-size: 18px; border-bottom: 1px solid">Vods of Favorites (${res.length})</div>` + res.sort((a, b) => (new Date(b.created_at).getTime() + durToSecs(b.duration)) - (new Date(a.created_at).getTime() + durToSecs(a.duration))).map(el => vod(el, now, 0, !search.length || el.user_login.includes(search))).join("");
-    })
+    // console.log('res:', res);
+
+    res = res.map(e => e?.data?.[0] || null).filter(e => e).sort((a, b) => (new Date(b.created_at).getTime() + durToSecs(b.duration)) - (new Date(a.created_at).getTime() + durToSecs(a.duration)));
+    let str = res.map(e => vod(e)).join("");
+
+    event.target.outerHTML = `<div style="font-size: 18px; border-bottom: 1px solid">Vods of Favorites (${res.length})</div>` + str
   },
   'get-offline': async (e) => {
     let els = []
@@ -137,8 +137,8 @@ let clickable = {
     let date = Date.now() + 1000 * 60 * 60 * 10;
     let tag = e.target.dataset.vod_id || e.target.dataset.user_login;
     if (e.target.classList.contains('bg-white')) {
-      let { user_login, vod_id } = later[tag];
-      delete later[vod_id]
+      let { user_login, vod_id } = e.target.dataset;
+      delete later[vod_id];
       delete later[user_login];
       save({ later });
       return e.target.outerHTML = icons.later(e, 0, e.target.dataset.vod_id);
@@ -171,14 +171,28 @@ let clickable = {
   },
   star: (e) => {
     favorites[e.target.dataset.user_login.toLowerCase()] = 1;
-    chrome.storage.local.set({ favorites: favorites })
-    e.target.outerHTML = icons.starFilled({ user_login: e.target.dataset.user_login }, e.target.getAttribute('width'))
+    chrome.storage.local.set({ favorites: favorites });
+    [...document.querySelectorAll(`.star[data-user_login="${e.target.dataset.user_login}"]`)].forEach(el => el.outerHTML = icons.starFilled({ user_login: e.target.dataset.user_login }, e.target.getAttribute('width')));
+    // e.target.outerHTML = icons.starFilled({ user_login: e.target.dataset.user_login }, e.target.getAttribute('width'));
+
+    let favsE = document.querySelector('.main_favs');
+    let chan = document.querySelector(`.stream[data-user_login=${e.target.dataset.user_login.toLowerCase()}`);
+    if (!favs || !chan) return;
+    console.log(favs);
+    favsE.innerHTML = lives.data.filter(e => favorites[e.user_name.toLowerCase()]).map(e => stream(e)).join('')
+
   },
   'star-filled': e => {
     delete favorites[e.target.dataset.user_login.toLowerCase()];
-    chrome.storage.local.set({ favorites: favorites })
-    console.log(favorites);
-    e.target.outerHTML = icons.star({ user_login: e.target.dataset.user_login }, e.target.getAttribute('width'))
+    chrome.storage.local.set({ favorites: favorites });
+    [...document.querySelectorAll(`.star-filled[data-user_login="${e.target.dataset.user_login}"]`)].forEach(el => el.outerHTML = icons.star({ user_login: e.target.dataset.user_login }, e.target.getAttribute('width')));
+    // e.target.outerHTML = icons.star({ user_login: e.target.dataset.user_login }, e.target.getAttribute('width'))
+
+    let favsE = document.querySelector('.main_favs');
+    let chan = document.querySelector(`.stream[data-user_login=${e.target.dataset.user_login.toLowerCase()}`);
+    if (!favs || !chan) return;
+    console.log(favs);
+    favsE.innerHTML = lives.data.filter(e => favorites[e.user_name.toLowerCase()]).map(e => stream(e)).join('')
   },
   trash: e => {
     console.log(e.target.dataset.vod_id, later[e.target.dataset.vod_id], later);
@@ -191,9 +205,9 @@ let clickable = {
   'config-but': e => nav('config'),
   'later-but': e => nav('later'),
   'main-but': e => nav('main'),
-  'vods': (e) => {
-    nav('vods', e.target.dataset.user_login);
-  },
+  'vof-but': (e) => nav('vof'),
+  'channels-but': (e) => nav('channels'),
+  'vods-but': (e) => nav('vods', e.target.dataset.user_login),
   'x-but': e => clearSearch(),
   logout: e => {
     delete cred.access_token;
@@ -207,7 +221,9 @@ let clickable = {
     favorites = {};
     config = {}
     later = {}
-    save({ cred, streamer_cache, favorites, config, later })
+    channels = []
+    cache = {}
+    save({ cred, streamer_cache, favorites, config, later, channels, cache })
     document.getElementById('out').style.display = 'flex';
     document.getElementById('in').style.display = 'none';
   },
@@ -288,12 +304,14 @@ let clickable = {
       })
     }
   },
-  debug: e => console.log('debug:', { cred, streamer_cache, favorites, config, later, cache, fetches })
+  debug: e => console.log('debug:', { cred, streamer_cache, favorites, config, later, channels, cache, fetches })
 }
 
 let page_cb = {
   main: async () => {
-    let [lives, current] = await Promise.all([axi(`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`), runtimeFetch({ current: 1 })]);
+    document.querySelector('.main-but').classList.add('active-tab')
+    let current
+    [lives, current] = await Promise.all([axi(`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`), runtimeFetch({ current: 1 })]);
     console.log('lives', lives, cred);
     if (!lives?.data?.length) {
       console.log('fetch err: ', lives, current);
@@ -304,7 +322,7 @@ let page_cb = {
 
     let favs = lives.data.filter(e => favorites[e.user_name.toLowerCase()]);
     let str = "";
-    console.log(current);
+    // console.log(current);
 
     if (current) {
       if (current.includes('videos')) {
@@ -314,21 +332,26 @@ let page_cb = {
       }
       else if (lives.data.find(e => current.split('/').pop() == e.user_login)) str += `<div class="label" style="font-size: 18px; border-bottom: 1px solid">Currently watching </div>${stream(lives.data.find(e => current.split('/').pop() == e.user_login))}`;
     }
-    str += `<div class="label" style="font-size: 18px; border-bottom: 1px solid">Favorites (${favs.length})</div>${favs.map(e => stream(e)).join("")}`;
-    if (Object.keys(favorites).length)
-      str += `<div class="get-vods button bg-dark hl cursor" data-live="${lives.data.map(e => e.user_login).join()}">Get Vods</div>`;
-    str += `<div class="label" style="font-size: 18px; border-bottom: 1px solid">Streams (${lives.data.length})</div> ${lives.data.map(e => stream(e)).join("")}`;
-    str += `<div class="button bg-dark hl cursor get-offline">Show All</div>`
+    str += `<div class="label section" >Favorites (${favs.length})</div>`;
+    str += `<div class="main_favs">${favs.map(e => stream(e)).join("")}</div>`;
+    if (favs.length) str += `<div class="get-vods button bg-dark hl cursor vof-but, get-vods">Get Vods</div>`;
+    str += `<div class="label" style="font-size: 18px; border-bottom: 1px solid">Streams (${lives.data.length})</div>`;
+    str += lives.data.map(e => stream(e)).join("");
+    // lives.data.forEach(e => str += stream(e));
+    str += `<div class="button bg-dark hl cursor get-offline, channels-but">Show All</div>`;
 
     document.querySelector('.main').innerHTML = str;
     // fetchForCache()
   },
   later: async () => {
+    document.querySelector('.later-but').classList.add('active-tab')
     console.log('later', { ...later });
+    let later_arr = Object.entries(later);
     let now = Date.now();
-    Object.entries(later).forEach(e => now > e[1].date + 1000 * 60 * 60 * 24 * 61 ? delete later[e[0]] : null)
+    later_arr.forEach(e => now > e[1].date + 1000 * 60 * 60 * 24 * 61 ? delete later[e[0]] : null)
+    if (!later_arr.length) return document.querySelector('[page="later"]').innerHTML = `<div class="center fs18 grey"> No streams saved </div>`;
     let vods = await axi(`https://api.twitch.tv/helix/videos?type=archive&first=1${Object.values(later).map(e => '&id=' + (+e.vod_id || 123)).join("")}`);
-    let str = vods.data.map(e => vod(e, now)).join("")
+    let str = vods.data.map(e => vod(e, now)).join("") + `<div class="section" >Watch Later (${vods.data.length})</div>`
     // console.log(Object.values(later).length);
     document.querySelector('[page="later"]').innerHTML = str;
   },
@@ -362,11 +385,100 @@ let page_cb = {
 
     document.querySelector('[page="config"]').innerHTML = str;
   },
+  vof: async () => {
+    document.querySelector('.vof-but').classList.add('active-tab')
+    let res = await Promise.all(Object.keys(favorites).map(e => axi(`https://api.twitch.tv/helix/videos?type=archive&first=2&user_id=${streamer_cache[e]?.id || 123}`)));
+    if (!res?.length) return document.querySelector('[page="vof"]').innerHTML = `<div class="center fs18 grey"> No vods available</div>`;
+
+    let now = Date.now()
+
+    console.log('res:', res);
+
+    res = res.map(e => !e?.data?.[0]?.user_login ? null : !lives_save[e.data[0].user_login] || now - new Date(e.data[0].created_at).getTime() > 1000 * 60 * 60 * 24 ? e.data[0] : e.data[1] || null).filter(e => e).sort((a, b) => (new Date(b.created_at).getTime() + durToSecs(b.duration)) - (new Date(a.created_at).getTime() + durToSecs(a.duration)))
+
+    let str = `<div class="center, section">Favorite\'s VODs (${res.length}) </div>` + res.map(e => vod(e)).join("");
+
+    document.querySelector('[page="vof"]').innerHTML = str;
+  },
+  channels: async e => {
+    document.querySelector('.channels-but').classList.add('active-tab')
+    let els = []
+    let i = 0;
+    let pagman;
+    let offs = {}
+
+    // if (!channels.length) {
+    //   offs = await axi(`https://api.twitch.tv/helix/channels/followed?first=100&user_id=${cred.id}`)
+    //   els.push(...offs.data)
+    //   while (offs.pagination?.cursor) {
+    //     offs = await axi(`https://api.twitch.tv/helix/channels/followed?first=100&user_id=${cred.id}&after=${offs.pagination.cursor}`)
+    //     els.push(...offs.data)
+    //   }
+    //   channels = [...els]
+
+    // } else {
+
+    //   offs = await axi(`https://api.twitch.tv/helix/channels/followed?first=20&user_id=${cred.id}${pagman ? '&after=' + pagman : ''}`);
+    //   console.log(offs.data);
+
+    //   let bool = !offs.data.find(e => {
+    //     console.log(e.broadcaster_login, channels[0].broadcaster_login, e.broadcaster_login == channels[0].broadcaster_login);
+    //     return ++i && e.broadcaster_login == channels[0].broadcaster_login
+    //   })
+
+    //   if (bool) {
+    //     offs = await axi(`https://api.twitch.tv/helix/channels/followed?first=100&user_id=${cred.id}`)
+    //     els.push(...offs.data)
+    //     while (offs.pagination?.cursor) {
+    //       offs = await axi(`https://api.twitch.tv/helix/channels/followed?first=100&user_id=${cred.id}&after=${offs.pagination.cursor}`)
+    //       els.push(...offs.data)
+    //     }
+    //     channels = [...els]
+    //   } else channels = [...offs.data.slice(0, i - 1), ...channels]
+    // }
+
+    if (!channels.length) {
+      offs = await axi(`https://api.twitch.tv/helix/channels/followed?first=100&user_id=${cred.id}`)
+      channels = [...offs.data]
+      while (offs.pagination?.cursor) {
+        offs = await axi(`https://api.twitch.tv/helix/channels/followed?first=100&user_id=${cred.id}&after=${offs.pagination.cursor}`)
+        channels.push(...offs.data)
+      }
+    } else {
+      offs = await axi(`https://api.twitch.tv/helix/channels/followed?first=10&user_id=${cred.id}${pagman ? '&after=' + pagman : ''}`)
+      console.log(offs.data)
+    
+      let bool = !offs.data.find(e => {
+        console.log(e.broadcaster_login, channels[0].broadcaster_login, e.broadcaster_login == channels[0].broadcaster_login)
+        return ++i && e.broadcaster_login == channels[0].broadcaster_login
+      })
+    
+      if (bool) {
+        offs = await axi(`https://api.twitch.tv/helix/channels/followed?first=100&user_id=${cred.id}`)
+        channels = [...offs.data]
+        while (offs.pagination?.cursor) {
+          offs = await axi(`https://api.twitch.tv/helix/channels/followed?first=100&user_id=${cred.id}&after=${offs.pagination.cursor}`)
+          channels.push(...offs.data)
+        }
+      } else {
+        channels = [...offs.data.slice(0, i - 1), ...channels]
+      }
+    }
+
+    // console.log(els);
+
+    let str = `<div style="font-size: 18px; border-bottom: 1px solid">Channels (${channels.length})</div>`;
+    str += channels.map(e => channel(e, !search.length || e.broadcaster_login.includes(search))).join(""); //.filter(e => !lives_save[e.user_login])
+
+    // console.log(els);
+    document.querySelector('[page="channels"]').innerHTML = str;
+
+    save({ channels })
+  }
 
 }
 
 //#endregion
-
 
 //#region UI
 function stream(e) {
@@ -408,7 +520,7 @@ function stream(e) {
 
      <div class="flex buts" style="flex-gap: 3px">
         <div title="vods">
-         ${icons.vods(e)}
+          ${icons.vods(e)}
         </div>
 
         <div title="watch later">
@@ -528,10 +640,14 @@ function durToSecs(s) {
   return (acc * 1000) || 0;
 }
 
+function clamp(val, min, max) { return val > max ? max : val < min ? min : val }
+
 function nav(s, arg) {
   // clearSearch()
+  document.querySelector('.active-tab')?.classList.remove('active-tab') || null;
   [...document.querySelectorAll('[page]')].forEach(e => e.style.display = 'none');
   document.querySelector(`[page="${s}"]`).style.display = 'flex';
+  document.querySelector('.in').scrollTo(0, 0)
   page_cb[s] && page_cb[s](arg);
   current_page = s
 }
@@ -627,12 +743,13 @@ async function runtimeFetch(json) {
 }
 
 async function main() {
-  [streamer_cache, favorites, cred, config, later, cache] = await Promise.all([
+  [streamer_cache, favorites, cred, config, later, channels, cache] = await Promise.all([
     chrome.storage.local.get(['streamer_cache']).then(res => res.streamer_cache || {}),
     chrome.storage.local.get(['favorites']).then(res => res.favorites || {}),
     chrome.storage.local.get(['cred']).then(res => res.cred || {}),
     chrome.storage.local.get(['config']).then(res => res.config || {}),
     chrome.storage.local.get(['later']).then(res => res.later || {}),
+    chrome.storage.local.get(['channels']).then(res => res.channels || []),
     chrome.storage.local.get(['cache']).then(res => res.cache || {}),
   ]);
 
@@ -740,6 +857,7 @@ document.addEventListener('keyup', e => {
 
 /*notes:
 cant use get stream() for vods
+channels too much api data, only do recent follow?
 */
 
 /* done
