@@ -317,6 +317,7 @@ async function addBar() {
 async function main() {
   // let observer = new MutationObserver(callback);
   // observer.observe(document.body, { childList: true, subtree: true });
+  // return
 
   [streamer_cache, favorites, cred, config, later] = await Promise.all([
     chrome.storage.local.get(['streamer_cache']).then(res => res.streamer_cache || {}),
@@ -325,6 +326,10 @@ async function main() {
     chrome.storage.local.get(['config']).then(res => res.config || {}),
     chrome.storage.local.get(['later']).then(res => res.later || {}),
   ]);
+
+  chrome.runtime.sendMessage(({ open: window.location.href }))
+
+  if (!config.cs) return;
 
   if (config.no_cs) return console.log('TSF page disabled');
   if (!cred.access_token) {
@@ -364,6 +369,7 @@ async function Delay(secs) {
 }
 
 main();
+
 
 //#endregion
 
@@ -430,8 +436,9 @@ let clickable = {
     getFavs(1)
   },
   'icon-tabler-movie': (e) => {
+    let ctrl = e.ctrlKey;
     let el = e.target.firstElementChild;
-    window.open(`https://www.twitch.tv/${el.getAttribute('user_login')}/videos?filter=archives&sort=time`);
+    ctrl ? window.open(`https://www.twitch.tv/${el.getAttribute('user_login')}/videos?filter=archives&sort=time`) : window.location = `https://www.twitch.tv/${el.getAttribute('user_login')}/videos?filter=archives&sort=time`;
   },
   'icon-tabler-clock-hour-4': async e => {
     let el = e.target.firstElementChild;
@@ -526,10 +533,10 @@ let clickable = {
 
 document.addEventListener('click', e => {
   if (e.target?.classList) [...e.target.classList].forEach(el => clickable[el] && clickable[el](e));
-  if(ctx?.style?.display == 'flex') {
+  if (ctx?.style?.display == 'flex') {
     ctx.style.display = 'none'
     cur_ctx = ''
-  } 
+  }
 })
 
 let ctxable = {
@@ -545,14 +552,49 @@ let ctxable = {
       save({ streamer_cache })
     });
     let id = streamer_cache[user_login].id
-    axi(`https://api.twitch.tv/helix/videos?type=archive&first=1&user_id=${id}`).then(res => window.open(`https://www.twitch.tv/videos/${res.data[0].id}`));
+    axi(`https://api.twitch.tv/helix/videos?type=archive&user_id=${id}`).then(res => ctrl ? window.open(`https://www.twitch.tv/videos/${res.data[0].id}`) : window.location = `https://www.twitch.tv/videos/${res.data[0].id}`);
     // .then(res => ctrl ? window.open(`https://www.twitch.tv/videos/${res.data[0].id}`) : window.location = `https://www.twitch.tv/videos/${res.data[0].id}`);
   }
 }
 
 document.addEventListener('contextmenu', e => {
   if (e.target?.classList) [...e.target.classList].forEach(el => ctxable[el] && ctxable[el](e));
-})
+});
+
+let midable = {
+  // 'stream': (e) => window.open(`https://twitch.tv/${e.target.dataset.user_login}`),
+  // 'vod': (e) => window.open(`https://www.twitch.tv/videos/${e.target.dataset.vod_id}`),
+ 'icon-tabler-movie': async (e) => {
+    // let el = e.target.firstElementChild;
+    // window.open(`https://www.twitch.tv/${el.getAttribute('user_login')}/videos?filter=archives&sort=time`);
+    let el = e.target.firstElementChild;
+    let user_login = el.getAttribute('user_login') || document.querySelector('h1.tw-title')?.innerHTML.toLowerCase() || null;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!streamer_cache[user_login]) await axi(`https://api.twitch.tv/helix/users?login=${user_login}`).then(res => {
+      if (!res.data[0]) return console.log('huh');
+      streamer_cache[user_login] = res.data[0];
+      save({ streamer_cache })
+    });
+    let id = streamer_cache[user_login].id
+    axi(`https://api.twitch.tv/helix/videos?type=archive&user_id=${id}`).then(res => window.open(`https://www.twitch.tv/videos/${res.data[0].id}`))
+  },
+}
+
+document.addEventListener('mousedown', e => {
+  if (e.button != 1) return;
+  if (e.target?.classList) [...e.target.classList].forEach(el => midable[el] && midable[el](e));
+}) 
+
+// cmt = {
+//   'username': (msg, res) => res(document.querySelector('h1.tw-title')?.innerHTML.toLowerCase() || null),
+// };
+
+// chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+//   cmt[message.type] && cmt[message.type](message, sendResponse, sender);
+// });
+
+// chrome.runtime.sendMessage
 
 // document.addEventListener('click', e => {
 //   if(e.target.dataset.fiie) console.log(e.target.dataset.fiie)
