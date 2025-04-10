@@ -313,7 +313,6 @@ async function addBar() {
   document.querySelector('.Layout-sc-1xcs6mc-0').prepend(icons.ctx());
 }
 
-
 async function main() {
   // let observer = new MutationObserver(callback);
   // observer.observe(document.body, { childList: true, subtree: true });
@@ -323,13 +322,13 @@ async function main() {
     chrome.storage.local.get(['streamer_cache']).then(res => res.streamer_cache || {}),
     chrome.storage.local.get(['favorites']).then(res => res.favorites || {}),
     chrome.storage.local.get(['cred']).then(res => res.cred || {}),
-    chrome.storage.local.get(['config']).then(res => res.config || {}),
+    chrome.storage.local.get(['config']).then(res => res.config || { cs:1}),
     chrome.storage.local.get(['later']).then(res => res.later || {}),
   ]);
 
   chrome.runtime.sendMessage(({ open: window.location.href }))
 
-  if (!config.cs) return;
+  // if (!config.cs) return;
 
   if (config.no_cs) return console.log('TSF page disabled');
   if (!cred.access_token) {
