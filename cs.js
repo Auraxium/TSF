@@ -287,22 +287,22 @@ async function getFavs(force) {
 async function addBar() {
   if (document.querySelector('svg[data-fill]')) return;
 
-  let laq = '[data-target="channel-header-right"]' //'.Layout-sc-1xcs6mc-0.ktLpvM'
-  // console.log('searching for staringing');
+  let laq = 'div.Layout-sc-1xcs6mc-0.hnHqxZ'//'[data-target="channel-header-right"]' //'.Layout-sc-1xcs6mc-0.ktLpvM'
+  console.log('searching for staringing');
 
   while (!document.querySelector(laq)) {
-    // console.log('searching for laq', document.querySelector(laq));
+    console.log('searching for laq', document.querySelector(laq));
     await Delay(1000);
   }
-  // console.log('found laq:', document.querySelector(laq))
+  console.log('found laq:', document.querySelector(laq))
 
-  while (!document.querySelector('.Layout-sc-1xcs6mc-0.lmNILC')) {
-    // console.log('searching for laq', document.querySelector(laq));
-    await Delay(1000);
-  }
+  // while (!document.querySelector('.Layout-sc-1xcs6mc-0.lmNILC')) {
+  //   console.log('searching for laq container', document.querySelector(laq));
+  //   await Delay(1000);
+  // }
   // console.log('and therfore found layout:', document.querySelector('.Layout-sc-1xcs6mc-0.lmNILC'))
 
-  la = document.querySelector('.Layout-sc-1xcs6mc-0.lmNILC');
+  la = document.querySelector(laq);
   current_name = document.querySelector('h1.tw-title').innerHTML.toLowerCase()
 
   if (document.querySelector('svg[data-fill]')) return;
@@ -369,7 +369,6 @@ async function Delay(secs) {
 
 main();
 
-
 //#endregion
 
 //#region events
@@ -402,7 +401,7 @@ document.addEventListener('contextmenu', (e) => {
   ctx.setAttribute('user_login', user_login)
 
   ctx.innerHTML = `
-    ${streamer_cache[user_login] ? `<img src="${streamer_cache[user_login]?.profile_image_url || -1}" onclick="window.this" style="width: 50px; padding: 4px; aspect-ratio: 1; border-radius: 99%" />` : ''}
+    ${streamer_cache[user_login] ? `<img src="${streamer_cache[user_login]?.profile_image_url || -1}" onpointerdown="window.open('https://www.twitch.tv/${user_login}')" style="width: 50px; padding: 4px; aspect-ratio: 1; border-radius: 99%" />` : ''}
     ${channels[user_login] ? icons.star({ user_login }).outerHTML : ''}
     ${icons.vods({ user_login }).outerHTML}
     ${icons.later({ user_login, ind: -1 }).outerHTML}
