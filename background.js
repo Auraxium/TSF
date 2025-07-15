@@ -2,9 +2,11 @@ let access_token;
 let port =  'https://misc.auraxium.dev'// "http://localhost:3145";// 
 let url = "";
 let last_streamer = "";
+let cred = {};
 let recents = {};
-let changes = new Set();
+let changes = {}
 let change_filt = new Set(["config", "favorites", "later", 'date']);
+let save_rdy, changes_str;
 
 let debounce = function (cb, delay = 1000, timeout) {
   return (...args) => {
@@ -28,9 +30,12 @@ let msgs = {
     console.log("applebobatea");
   },
   change: (e, sendResponse) => {
-    changes.add(e.key);
-    // console.log(changes)
-    cloudSave();
+    // if(e.change.cred) return cred = e.change.cred;
+    // if(!change_filt.has(Object.keys(e.change)[0])) return;
+    // changes = {...changes, ...e.change}
+    // changes_str = JSON.stringify(changes)
+    // save_rdy = 1
+    // bounceSave()
   },
   slate: (e, sendResponse) => {},
 };
@@ -87,42 +92,28 @@ chrome.tabs.onActivated.addListener(function (activeInfo) {
 });
 
 function main() {
-  recents = chrome.storage.local
-    .get(["recents"])
-    .then((res) => res.streamer_cache || recents)
-    .catch(console.log);
+  chrome.storage.local.get(["recents", "cred"]).then((res) => {
+    // console.log('background res:' ,res);
+    recents = res.recents || {};
+    cred = res.cred || {};
+  })
+  // changes_plat = {device: cred.device, }
 }
 
-function save(j, debug) {
+function save(j, debug, ) {
   chrome.storage.local.set(j);
   if (debug) console.log(j);
 }
 
-var cloudSave = debounce(async () => {
-  console.log("cloud saving");
-  let data = [...changes].filter((e) => change_filt.has(e));
-  data.push('cred');
-  let is = await Promise.all(data.map((e) => chrome.storage.local.get([e]).catch(() => null)));
-  let cred = is.pop().cred;
-  if (!is.length) return console.log('nvm no saves');
-  let send = is.reduce((acc, e, i) => {
-    acc[data[i]] = e[data[i]];
-    return acc;
-  }, {});
-  send.date = Date.now();
-  send.device = cred.device;
-  changes.clear();
-  fetch(port + "/tsfSave", {
-    method: "POST",
-    body: JSON.stringify({changes: send}),
-    headers: {
-      Authorization: `Bearer ${cred.jwt}`,
-      "Content-Type": "application/json",
-    },
-  }).then(() => console.log("cloud saved:", send)).catch(console.log);
-}, 1000 * 3)
-
 main();
+
+// chrome.windows.onRemoved.addListener(hardSave);
+
+// let background = chrome.extension.getBackgroundPage();
+// background.addEventListener("unload", () => {
+//   cache['baj'] = 'bajbaj'
+//   save({cache})
+// })
 
 // console.log('am i like restarting?');
 

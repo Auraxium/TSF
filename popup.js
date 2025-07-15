@@ -1,13 +1,15 @@
 //#region init
-let cred = {};
-let streamer_cache = {};
-let favorites = {};
-let config = {};
-let later = {};
-let channels = [];
-let cache = {};
+var cred = {};
+var streamer_cache = {};
+var favorites = {};
+var config = {};
+var later = {};
+var channels = [];
+var cache = {};
+var $unset = new Set();
+let save_map = { streamer_cache, favorites, cred, config, later, channels, cache };
 
-let port = 'https://misc.auraxium.dev'//"http://localhost:3145";//
+let port = "http://localhost:3145"; //"https://misc.auraxium.dev"; //
 let lives_save = {};
 let temp;
 let icon_size = 28;
@@ -19,6 +21,8 @@ let lives = {};
 let favs = [];
 let gnow = Date.now();
 let changes = {};
+let change_filt = new Set(["config", "favorites", "later"]);
+let save_rdy, changes_str;
 
 let vod_ct = 60 * 24 * 60;
 let lives_ct = 1;
@@ -169,11 +173,12 @@ let clickable = {
 
     if (e.classList.contains("bg-white")) {
       //is on
-      // console.log(e.target, user_login, vod_id);
       if (later[user_login]) delete later[later[user_login].vod_id];
       delete later[vod_id];
-      if(!vod_id) delete later[user_login];
-      save({ later });
+      if (!vod_id) delete later[user_login];
+      // $unset.add(`later.${vod_id}`)
+      save({[`later.${vod_id}`]: '$'})
+
       return (e.outerHTML = icons.later({ user_login, created_at, duration, id: vod_id }, 0, vod_id));
     }
 
@@ -185,36 +190,36 @@ let clickable = {
         user_login,
         vod_id,
       };
-      save({ later });
-      return //(e.outerHTML = icons.later({ user_login, created_at, duration, id: vod_id }, 1, vod_id));
+      save({ [`later.${vod_id}`]: later[vod_id] });
+      return; //(e.outerHTML = icons.later({ user_login, created_at, duration, id: vod_id }, 1, vod_id));
     }
 
     axi(`https://api.twitch.tv/helix/videos?type=archive&first=1&user_id=${streamer_cache[user_login]?.id || 123}`, 1).then((res) => {
       console.log("later res:", res);
-      let date = new Date(res.data[0].created_at).getTime()
+      let date = new Date(res.data[0].created_at).getTime();
       if (!res || !res.data[0]?.created_at || now - date > 1000 * 60 * 60 * 24) {
         console.log("loss:", { now, ...res });
         return;
       }
       vod_id = res.data[0].id;
       // console.log(e.target);
-      later[vod_id] = {
+      let vod = {
         date,
         vod_id,
         user_login,
       };
-      later[user_login] = {
-        date,
-        vod_id,
-        user_login,
-      };
-      save({ later }, 1);
-      return
+
+      later[vod_id] = vod;
+      later[user_login] = vod;
+      save({
+        [`later.${user_login}`]: vod,
+        [`later.${vod_id}`]: vod,
+      });
     });
   },
   star: (e) => {
     favorites[e.target.dataset.user_login.toLowerCase()] = 1;
-    save({ favorites: favorites });
+    save({ [`favorites.${e.target.dataset.user_login.toLowerCase()}`] : 1 });
     // chrome.storage.local.set({ favorites: favorites });
     [...document.querySelectorAll(`.star[data-user_login="${e.target.dataset.user_login}"]`)].forEach((el) => (el.outerHTML = icons.starFilled({ user_login: e.target.dataset.user_login }, e.target.getAttribute("width"))));
     // e.target.outerHTML = icons.starFilled({ user_login: e.target.dataset.user_login }, e.target.getAttribute('width'));
@@ -228,7 +233,7 @@ let clickable = {
   },
   "star-filled": (e) => {
     delete favorites[e.target.dataset.user_login.toLowerCase()];
-    save({ favorites: favorites });
+    save({ [`favorites.${e.target.dataset.user_login.toLowerCase()}`]: '$' });
     // chrome.storage.local.set({ favorites: favorites });
     [...document.querySelectorAll(`.star-filled[data-user_login="${e.target.dataset.user_login}"]`)].forEach((el) => (el.outerHTML = icons.star({ user_login: e.target.dataset.user_login }, e.target.getAttribute("width"))));
     // e.target.outerHTML = icons.star({ user_login: e.target.dataset.user_login }, e.target.getAttribute('width'))
@@ -245,7 +250,7 @@ let clickable = {
     let { vod_id, user_login } = e.target.dataset;
     delete later[vod_id];
     if (later[user_login]?.vod_id == vod_id) delete later[user_login];
-    save({ later }, 1);
+    save({ [`later.${user_login}`]: '$' }, 1);
     e.target.parentElement.parentElement.parentElement.parentElement.remove();
   },
   "config-but": (e) => nav("config"),
@@ -275,88 +280,36 @@ let clickable = {
     document.getElementById("out").style.display = "flex";
     document.getElementById("in").style.display = "none";
   },
-  cbut: (e) => {
-    let { type } = e.target.dataset;
-    if (type == "fs") {
-      let data = JSON.stringify({ favorites, config, later });
-      let pom = document.createElement("a");
-      pom.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(data));
-      pom.setAttribute("download", "TSF" + new Date().toLocaleString() + ".json");
-      if (document.createEvent) {
-        var event = document.createEvent("MouseEvents");
-        event.initEvent("click", true, true);
-        pom.dispatchEvent(event);
-      } else {
-        pom.click();
-      }
-      pom.remove();
+  cloudload: (e) => {
+    cloudLoad(1);
+    nav("main");
+  },
+  fl: (e) => {
+    let pom = document.createElement("input");
+    function change(e) {
+      let file = e.target.files[0];
+      let reader = new FileReader();
+
+      reader.onload = (e) => {
+        const contents = e.target.result;
+        let data = JSON.parse(contents);
+        save(data);
+        // streamer_cache = data.streamer_cache;
+        favorites = data.favorites;
+        config = data.config;
+        later = data.later;
+
+        // if (cred.login != data.cred.login) cred = data.cred;
+
+        nav("main");
+        pom.remove();
+      };
+      reader.onerror = (e) => alert(e.target.error.name);
+      reader.readAsText(file);
     }
-
-    if (type == "fl") {
-      let pom = document.createElement("input");
-      function change(e) {
-        let file = e.target.files[0];
-        let reader = new FileReader();
-
-        reader.onload = (e) => {
-          const contents = e.target.result;
-          let data = JSON.parse(contents);
-          save(data);
-          // streamer_cache = data.streamer_cache;
-          favorites = data.favorites;
-          config = data.config;
-          later = data.later;
-          // if (cred.login != data.cred.login) cred = data.cred;
-
-          nav("main");
-          pom.remove();
-        };
-        reader.onerror = (e) => alert(e.target.error.name);
-        reader.readAsText(file);
-      }
-      pom.setAttribute("type", "file");
-      pom.addEventListener("change", change);
-      pom.click();
-    }
-
-    if (type == "cs") {
-      e.target.outerHTML = "<div>saved</div>";
-      if (!Object.keys.length) return;
-      let data = {};
-      if (changes.favorites) data.favorites = changes.favorites;
-      if (changes.later) data.later = changes.later;
-      if (changes.config) data.config = changes.config;
-      fetch(port + "/tsfSave", {
-        method: "POST",
-        body: JSON.stringify({ id: +cred.id, changes: data }),
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-    }
-
-    if (type == "cl") {
-      fetch(port + "/tsfLoad", {
-        method: "POST",
-        body: JSON.stringify({ login: cred.login }),
-        headers: { "Content-Type": "application/json" },
-      })
-        .then((res) => res.json())
-        .then((res) => {
-          if (!res.data.data) return (e.target.outerHTML = "No Data Found");
-          let data = JSON.parse(res.data.data);
-          console.log("load data:", data);
-
-          save({ favorites: data.favorites, later: data.later });
-          // streamer_cache = data.streamer_cache;
-          favorites = data.favorites;
-          config = data.config;
-          later = data.later;
-          // if (cred?.login != data.cred.login) cred = data.cred;
-
-          nav("main");
-        });
-    }
+    pom.setAttribute("type", "file");
+    pom.addEventListener("change", change);
+    pom.click();
   },
   option: (e) => {
     let c = e.target.children[1];
@@ -397,7 +350,7 @@ let page_cb = {
       str += '<div class="label" style="font-size: 18px; border-bottom: 1px solid">Currently watching </div>';
       if (+current) {
         let { data } = await axi(`https://api.twitch.tv/helix/videos?type=archive&first=1&id=${current}`, vod_ct);
-        console.log(data);
+        // console.log(data);
         if (data?.[0]) str += vod(data[0]);
       } else if (lives_save[current]) str += stream(lives_save[current]);
       else str = "";
@@ -684,13 +637,6 @@ function channel(e, show) {
 //#endregion
 
 //#region FUNCTIONS
-function save(j, debug) {
-  chrome.storage.local.set(j);
-  runtimeFetch({ port: "change", key: Object.keys(j)[0] });
-  changes = { ...changes, ...j };
-  // if (debug)
-  // console.log(changes)
-}
 
 async function test() {
   // axi("https://api.twitch.tv/helix/streams?type=all&user_id=517475551").then(console.log)
@@ -825,19 +771,22 @@ async function auth() {
     })
       .then((res) => res.json())
       .then(async (res) => {
-        cred = {...cred, ...res.cred, device: Math.random().toString(27).slice(2, 12)};
-        console.log(res);
-        save({ cred });
-        document.getElementById("in").style.display = "flex";
-        document.getElementById("out").style.display = "none";
+        cred = { ...cred, ...res.cred, device: Math.random().toString(27).slice(2, 12) };
+        // save({ cred });
+        console.log("cred", cred);
+        await chrome.storage.local.set({ cred });
         if (res.data) {
+          for (let key in res.data) globalThis[key] = res.data[key];
           console.log("had data:", res.data);
           await chrome.storage.local.set(res.data);
-          cache.last_load = Date.now() //{ expire: Date.now() + 60000, res: res.data };
-          save({ cache });
+          cache.last_load = Date.now(); //{ expire: Date.now() + 60000, res: res.data };
+          await chrome.storage.local.set({ cache });
         }
-        // nav('main');
-        main();
+
+        document.getElementById("in").style.display = "flex";
+        document.getElementById("out").style.display = "none";
+        nav("main");
+        // main();
         // window.location.reload()
       })
       .catch(console.log);
@@ -875,48 +824,115 @@ var $ = (s) => {
   return !a.length ? null : a.length == 1 ? a[0] : a;
 };
 
-async function cloudLoad() {
+async function save(part, debug, nochange) {
+  // console.log("i ran twice", part);
+  let log = new Set();
+
+  for (let e in part) {
+
+    let arr = [changes];
+    let spl = e.split(".");
+    console.log(spl)
+    log.add(spl[0]);
+    if (!change_filt.has(spl[0])) continue;
+    if (spl.length == 1) {
+      changes[e] = part[e];
+      continue;
+    }
+
+    spl.forEach((el, i) => {
+      arr[i][el] ??= {};
+      arr[i + 1] = arr[i][el];
+    });
+
+    if (part[e] == "$") {
+      $unset.add(e)
+      delete arr.at(-2)[spl.at(-1)];
+    } else {
+      arr.at(-2)[spl.at(-1)] = part[e];
+      $unset.delete(e)
+    } 
+
+    save_rdy = 1;
+  }
+
+  let k = [...log].reduce((acc, e) => {
+    acc[e] = globalThis[e];
+    return acc;
+  }, {});
+  await chrome.storage.local.set(k);
+  console.log('changes:', changes);
+  bounceSave()
+}
+
+function cloudSave() {
+  console.log("cloud saving:", changes);
+  changes.device = cred.device;
+  changes.date = Date.now();
+  fetch(port + "/tsfSave", {
+    method: "POST",
+    body: JSON.stringify({ changes, $unset: [...$unset] }),
+    headers: {
+      Authorization: `Bearer ${cred.jwt}`,
+      "Content-Type": "application/json",
+    },
+    keepalive: true,
+  })
+    .then(console.log)
+    .catch(console.log);
+  changes = {};
+  $unset.clear();
+  save_rdy = 0;
+}
+
+var bounceSave = debounce(cloudSave, 1000 * 7);
+
+async function cloudLoad(force) {
   let now = Date.now();
-  // if(now - (cache.last_load||0) < 1000*60*10) return;
+  let cd = now - (cache.last_load || 0);
+  console.log(cache.last_load, now - cache.last_load, 1000 * 40 * 1)
+  if (force && cd < 1000 * 40 * 1) return console.log("too soon load");
+  else if (!force && cd < 1000 * 60 * 10) return console.log("too soon load");
   cache.last_load = now;
+  await chrome.storage.local.set({ cache });
   let res = await fetch(port + "/tsfLoad", {
     method: "GET",
     headers: {
       Authorization: `Bearer ${cred.jwt}`,
       "Content-Type": "application/json",
     },
-  }).then(res => res.json()).catch(console.log);
-  console.log('load:', res)
-  if(!res || res.device == cred.device) return;
-  
+  })
+    .then((res) => res.json())
+    .catch(console.log);
+  console.log("load:", res);
+  if (!res) return console.log("no account");
+  if (res.device == cred.device) return console.log("no new save");
+  console.log("syncing save");
+  for (let key in res.data) if (res[key]) globalThis[key] = res[key];
+  await chrome.storage.local.set(res);
+  nav("main");
+  // main();
 }
 
 async function main() {
-  [streamer_cache, favorites, cred, config, later, channels, cache] = await Promise.all([
-    chrome.storage.local.get(["streamer_cache"]).then((res) => res.streamer_cache || {}),
-    chrome.storage.local.get(["favorites"]).then((res) => res.favorites || {}),
-    chrome.storage.local.get(["cred"]).then((res) => res.cred || {}),
-    chrome.storage.local.get(["config"]).then((res) => res.config || { cs: 1 }),
-    chrome.storage.local.get(["later"]).then((res) => res.later || {}),
-    chrome.storage.local.get(["channels"]).then((res) => res.channels || []),
-    chrome.storage.local.get(["cache"]).then((res) => res.cache || {}),
-  ]);
+  const keys = ["streamer_cache", "favorites", "cred", "config", "later", "channels", "cache"];
+  chrome.storage.local.get(keys).then((res) => {
+    for (const key of keys) if (res[key]) globalThis[key] = res[key];
 
-  if (!cred || !cred.access_token || !cred.jwt) {
-    document.getElementById("out").style.display = "flex";
-    document.getElementById("in").style.display = "none";
-    return;
-  } else {
-    document.getElementById("in").style.display = "flex";
-    document.getElementById("out").style.display = "none";
+    if (!cred || !cred.access_token || !cred.jwt) {
+      document.getElementById("out").style.display = "flex";
+      document.getElementById("in").style.display = "none";
+      return;
+    } else {
+      document.getElementById("in").style.display = "flex";
+      document.getElementById("out").style.display = "none";
+    }
     nav("main");
-  }
-
-  cloudLoad();
-
-  if (Date.now() > (cache.expire || 0)) cache = { expire: Date.now() + 1000 * 60 * 60 * 24 * 13 };
-
-  test();
+    cloudLoad(1);
+    if (Date.now() > (cache.expire || 0)) cache = { expire: Date.now() + 1000 * 60 * 60 * 24 * 13 };
+    test();
+  });
+  // console.log(res)
 }
 
 main();
@@ -992,14 +1008,8 @@ document.addEventListener("keyup", (e) => {
   keys[e.key] = 0;
 });
 
-// let background = chrome.extension.getBackgroundPage();
-// background.addEventListener("unload", () => {
-//   cache['baj'] = 'bajbaj'
-//   save({cache})
-// })
-
 window.addEventListener("unload", () => {
-  chrome.runtime.sendMessage({ port: "unload" });
+  save_rdy && cloudSave();
 });
 
 // let sb = document.querySelector('.scroll-bar')
