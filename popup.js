@@ -9,7 +9,7 @@ var cache = {};
 var $unset = new Set();
 let save_map = { streamer_cache, favorites, cred, config, later, channels, cache };
 
-let port = "https://misc.auraxium.dev"; //"http://localhost:3145"; //
+let port = "http://localhost:3145"; //"https://misc.auraxium.dev"; //
 let lives_save = {};
 let temp;
 let icon_size = 28;
@@ -173,11 +173,19 @@ let clickable = {
 
     if (e.classList.contains("bg-white")) {
       //is on
-      if (later[user_login]) delete later[later[user_login].vod_id];
-      delete later[vod_id];
-      if (!vod_id) delete later[user_login];
-      // $unset.add(`later.${vod_id}`)
-      save({[`later.${vod_id}`]: '$'})
+      if (!vod_id) vod_id = later[user_login].vod_id;
+
+      if (later[vod_id].user_login == user_login) {
+        delete later[vod_id];
+        delete later[user_login];
+        save({
+          [`later,${vod_id}`]: "$",
+          [`later,${user_login}`]: "$",
+        });
+      } else {
+        delete later[vod_id];
+        save({ [`later,${vod_id}`]: "$" });
+      }
 
       return (e.outerHTML = icons.later({ user_login, created_at, duration, id: vod_id }, 0, vod_id));
     }
@@ -190,7 +198,7 @@ let clickable = {
         user_login,
         vod_id,
       };
-      save({ [`later.${vod_id}`]: later[vod_id] });
+      save({ [`later,${vod_id}`]: later[vod_id] });
       return; //(e.outerHTML = icons.later({ user_login, created_at, duration, id: vod_id }, 1, vod_id));
     }
 
@@ -212,14 +220,14 @@ let clickable = {
       later[vod_id] = vod;
       later[user_login] = vod;
       save({
-        [`later.${user_login}`]: vod,
-        [`later.${vod_id}`]: vod,
+        [`later,${user_login}`]: vod,
+        [`later,${vod_id}`]: vod,
       });
     });
   },
   star: (e) => {
     favorites[e.target.dataset.user_login.toLowerCase()] = 1;
-    save({ [`favorites.${e.target.dataset.user_login.toLowerCase()}`] : 1 });
+    save({ [`favorites,${e.target.dataset.user_login.toLowerCase()}`]: 1 });
     // chrome.storage.local.set({ favorites: favorites });
     [...document.querySelectorAll(`.star[data-user_login="${e.target.dataset.user_login}"]`)].forEach((el) => (el.outerHTML = icons.starFilled({ user_login: e.target.dataset.user_login }, e.target.getAttribute("width"))));
     // e.target.outerHTML = icons.starFilled({ user_login: e.target.dataset.user_login }, e.target.getAttribute('width'));
@@ -233,7 +241,7 @@ let clickable = {
   },
   "star-filled": (e) => {
     delete favorites[e.target.dataset.user_login.toLowerCase()];
-    save({ [`favorites.${e.target.dataset.user_login.toLowerCase()}`]: '$' });
+    save({ [`favorites,${e.target.dataset.user_login.toLowerCase()}`]: "$" });
     // chrome.storage.local.set({ favorites: favorites });
     [...document.querySelectorAll(`.star-filled[data-user_login="${e.target.dataset.user_login}"]`)].forEach((el) => (el.outerHTML = icons.star({ user_login: e.target.dataset.user_login }, e.target.getAttribute("width"))));
     // e.target.outerHTML = icons.star({ user_login: e.target.dataset.user_login }, e.target.getAttribute('width'))
@@ -250,7 +258,7 @@ let clickable = {
     let { vod_id, user_login } = e.target.dataset;
     delete later[vod_id];
     if (later[user_login]?.vod_id == vod_id) delete later[user_login];
-    save({ [`later.${user_login}`]: '$' }, 1);
+    save({ [`later,${user_login}`]: "$" }, 1);
     e.target.parentElement.parentElement.parentElement.parentElement.remove();
   },
   "config-but": (e) => nav("config"),
@@ -829,7 +837,6 @@ async function save(part, debug, nochange) {
   let log = new Set();
 
   for (let e in part) {
-
     // let arr = [changes];
     // let spl = e.split(".");
     // console.log(spl)
@@ -845,16 +852,19 @@ async function save(part, debug, nochange) {
     //   arr[i + 1] = arr[i][el];
     // });
 
+    let spl = e.split(",");
+    log.add(spl[0]);
+    if (!change_filt.has(spl[0])) continue;
+
     if (part[e] == "$") {
       $unset.add(e);
       // delete arr.at(-2)[spl.at(-1)];
       delete changes[e];
     } else {
       // arr.at(-2)[spl.at(-1)] = part[e];
-      changes[e] = part[e];
+      changes[e] = JSON.stringify(part[e]);
       $unset.delete(e);
-    } 
-    
+    }
   }
 
   let k = [...log].reduce((acc, e) => {
@@ -862,16 +872,16 @@ async function save(part, debug, nochange) {
     return acc;
   }, {});
   await chrome.storage.local.set(k);
-  console.log('changes:', changes);
-  bounceSave()
+  console.log("changes:", changes);
+  bounceSave();
   save_rdy = 1;
 }
 
 function cloudSave() {
-  if(!Object.keys(changes).length && !$unset.size) return;
+  if (!Object.keys(changes).length && !$unset.size) return;
   console.log("cloud saving:", changes);
-  changes.device = cred.device;
-  changes.date = Date.now();
+  changes.device = JSON.stringify(cred.device);
+  changes.date = JSON.stringify(Date.now());
   fetch(port + "/tsfSave", {
     method: "POST",
     body: JSON.stringify({ changes, $unset: [...$unset] }),
@@ -888,12 +898,12 @@ function cloudSave() {
   save_rdy = 0;
 }
 
-var bounceSave = debounce(cloudSave, 1000 * 7);
+var bounceSave = debounce(cloudSave, 1000 * 3);
 
 async function cloudLoad(force) {
   let now = Date.now();
   let cd = now - (cache.last_load || 0);
-  console.log(cache.last_load, now - cache.last_load, 1000 * 40 * 1)
+  console.log(cache.last_load, now - cache.last_load, 1000 * 40 * 1);
   if (force && cd < 1000 * 40 * 1) return console.log("too soon load");
   else if (!force && cd < 1000 * 60 * 10) return console.log("too soon load");
   cache.last_load = now;
