@@ -9,7 +9,7 @@ var cache = {};
 var $unset = new Set();
 let save_map = { streamer_cache, favorites, cred, config, later, channels, cache };
 
-let port = "http://localhost:3145"; //"https://misc.auraxium.dev"; //
+let port = "https://misc.auraxium.dev"; //"http://localhost:3145"; //
 let lives_save = {};
 let temp;
 let icon_size = 28;
@@ -830,30 +830,31 @@ async function save(part, debug, nochange) {
 
   for (let e in part) {
 
-    let arr = [changes];
-    let spl = e.split(".");
-    console.log(spl)
-    log.add(spl[0]);
-    if (!change_filt.has(spl[0])) continue;
-    if (spl.length == 1) {
-      changes[e] = part[e];
-      continue;
-    }
+    // let arr = [changes];
+    // let spl = e.split(".");
+    // console.log(spl)
+    // log.add(spl[0]);
+    // if (!change_filt.has(spl[0])) continue;
+    // if (spl.length == 1) {
+    //   changes[e] = part[e];
+    //   continue;
+    // }
 
-    spl.forEach((el, i) => {
-      arr[i][el] ??= {};
-      arr[i + 1] = arr[i][el];
-    });
+    // spl.forEach((el, i) => {
+    //   arr[i][el] ??= {};
+    //   arr[i + 1] = arr[i][el];
+    // });
 
     if (part[e] == "$") {
-      $unset.add(e)
-      delete arr.at(-2)[spl.at(-1)];
+      $unset.add(e);
+      // delete arr.at(-2)[spl.at(-1)];
+      delete changes[e];
     } else {
-      arr.at(-2)[spl.at(-1)] = part[e];
-      $unset.delete(e)
+      // arr.at(-2)[spl.at(-1)] = part[e];
+      changes[e] = part[e];
+      $unset.delete(e);
     } 
-
-    save_rdy = 1;
+    
   }
 
   let k = [...log].reduce((acc, e) => {
@@ -863,9 +864,11 @@ async function save(part, debug, nochange) {
   await chrome.storage.local.set(k);
   console.log('changes:', changes);
   bounceSave()
+  save_rdy = 1;
 }
 
 function cloudSave() {
+  if(!Object.keys(changes).length && !$unset.size) return;
   console.log("cloud saving:", changes);
   changes.device = cred.device;
   changes.date = Date.now();
