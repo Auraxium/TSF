@@ -882,8 +882,8 @@ async function save(part, debug, nochange) {
   }, {});
   await chrome.storage.local.set(k);
   console.log("changes:", changes);
-  bounceSave();
-  save_rdy = 1;
+  // bounceSave();
+  // save_rdy = 1;
 }
 
 function cloudSave() {
