@@ -179,12 +179,12 @@ let clickable = {
         delete later[vod_id];
         delete later[user_login];
         save({
-          [`later,${vod_id}`]: "$",
-          [`later,${user_login}`]: "$",
+          [`later.${vod_id}`]: "$",
+          [`later.${user_login}`]: "$",
         });
       } else {
         delete later[vod_id];
-        save({ [`later,${vod_id}`]: "$" });
+        save({ [`later.${vod_id}`]: "$" });
       }
 
       return (e.outerHTML = icons.later({ user_login, created_at, duration, id: vod_id }, 0, vod_id));
@@ -198,7 +198,7 @@ let clickable = {
         user_login,
         vod_id,
       };
-      save({ [`later,${vod_id}`]: later[vod_id] });
+      save({ [`later.${vod_id}`]: later[vod_id] });
       return; //(e.outerHTML = icons.later({ user_login, created_at, duration, id: vod_id }, 1, vod_id));
     }
 
@@ -220,14 +220,14 @@ let clickable = {
       later[vod_id] = vod;
       later[user_login] = vod;
       save({
-        [`later,${user_login}`]: vod,
-        [`later,${vod_id}`]: vod,
+        [`later.${user_login}`]: vod,
+        [`later.${vod_id}`]: vod,
       });
     });
   },
   star: (e) => {
     favorites[e.target.dataset.user_login.toLowerCase()] = 1;
-    save({ [`favorites,${e.target.dataset.user_login.toLowerCase()}`]: 1 });
+    save({ [`favorites.${e.target.dataset.user_login.toLowerCase()}`]: 1 });
     // chrome.storage.local.set({ favorites: favorites });
     [...document.querySelectorAll(`.star[data-user_login="${e.target.dataset.user_login}"]`)].forEach((el) => (el.outerHTML = icons.starFilled({ user_login: e.target.dataset.user_login }, e.target.getAttribute("width"))));
     // e.target.outerHTML = icons.starFilled({ user_login: e.target.dataset.user_login }, e.target.getAttribute('width'));
@@ -241,7 +241,7 @@ let clickable = {
   },
   "star-filled": (e) => {
     delete favorites[e.target.dataset.user_login.toLowerCase()];
-    save({ [`favorites,${e.target.dataset.user_login.toLowerCase()}`]: "$" });
+    save({ [`favorites.${e.target.dataset.user_login.toLowerCase()}`]: "$" });
     // chrome.storage.local.set({ favorites: favorites });
     [...document.querySelectorAll(`.star-filled[data-user_login="${e.target.dataset.user_login}"]`)].forEach((el) => (el.outerHTML = icons.star({ user_login: e.target.dataset.user_login }, e.target.getAttribute("width"))));
     // e.target.outerHTML = icons.star({ user_login: e.target.dataset.user_login }, e.target.getAttribute('width'))
@@ -258,7 +258,7 @@ let clickable = {
     let { vod_id, user_login } = e.target.dataset;
     delete later[vod_id];
     if (later[user_login]?.vod_id == vod_id) delete later[user_login];
-    save({ [`later,${user_login}`]: "$" }, 1);
+    save({ [`later.${user_login}`]: "$" }, 1);
     e.target.parentElement.parentElement.parentElement.parentElement.remove();
   },
   "config-but": (e) => nav("config"),
@@ -836,36 +836,45 @@ async function save(part, debug, nochange) {
   // console.log("i ran twice", part);
   let log = new Set();
 
+  // let changes = {
+  //   "a.b": JSON.stringify({ a: { b: { d: "werk" } } }),
+  //   "j.k": JSON.stringify({ j: { k: { l: "jacob" } } }),
+  //   $: JSON.stringify({ d: "drink" }),
+  // };
+
+  // save({ [`later.${vod_id}`]: later[vod_id] });
+
+  let hold = '';
+  let j = {};
   for (let e in part) {
-    // let arr = [changes];
-    // let spl = e.split(".");
-    // console.log(spl)
-    // log.add(spl[0]);
-    // if (!change_filt.has(spl[0])) continue;
-    // if (spl.length == 1) {
-    //   changes[e] = part[e];
-    //   continue;
-    // }
-
-    // spl.forEach((el, i) => {
-    //   arr[i][el] ??= {};
-    //   arr[i + 1] = arr[i][el];
-    // });
-
-    let spl = e.split(",");
+    let arr = [j];
+    let spl = e.split(".");
     log.add(spl[0]);
     if (!change_filt.has(spl[0])) continue;
-
+    let path = spl.slice(0,-1).join('.') || (Math.random()+'').slice(2);
+    console.log('path n spl:', path, spl)
     if (part[e] == "$") {
       $unset.add(e);
-      // delete arr.at(-2)[spl.at(-1)];
-      delete changes[e];
-    } else {
-      // arr.at(-2)[spl.at(-1)] = part[e];
-      changes[e] = JSON.stringify(part[e]);
-      $unset.delete(e);
+      delete changes[path];
+      continue;
+    } 
+
+    if (spl.length == 1) {
+      changes[path] = JSON.stringify({[spl[0]]: part[e]});
+      continue;
     }
+
+    spl.forEach((el, i) => {
+      arr[i][el] ??= {};
+      arr[i + 1] = arr[i][el];
+    });
+
+    arr.at(-2)[spl.at(-1)] = part[e];
+    changes[path] ??= {}
+    changes[path] = {...changes[path], j};
   }
+
+  console.log('jchanges:', changes);
 
   let k = [...log].reduce((acc, e) => {
     acc[e] = globalThis[e];
@@ -880,8 +889,8 @@ async function save(part, debug, nochange) {
 function cloudSave() {
   if (!Object.keys(changes).length && !$unset.size) return;
   console.log("cloud saving:", changes);
-  changes.device = JSON.stringify(cred.device);
-  changes.date = JSON.stringify(Date.now());
+  changes.device = JSON.stringify({device: cred.device});
+  changes.date = JSON.stringify({date: Date.now()});
   fetch(port + "/tsfSave", {
     method: "POST",
     body: JSON.stringify({ changes, $unset: [...$unset] }),
