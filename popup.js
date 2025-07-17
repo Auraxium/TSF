@@ -838,13 +838,15 @@ async function save(part, debug, nochange) {
 
   // let changes = {
   //   "a.b": JSON.stringify({ a: { b: { d: "werk" } } }),
+  //   "a.b": JSON.stringify({ a: { b: { e: "gad" } } }),
   //   "j.k": JSON.stringify({ j: { k: { l: "jacob" } } }),
   //   $: JSON.stringify({ d: "drink" }),
   // };
-
+  /*
+    "a.b"
+  */ 
   // save({ [`later.${vod_id}`]: later[vod_id] });
 
-  let hold = '';
   let j = {};
   for (let e in part) {
     let arr = [j];
@@ -858,20 +860,17 @@ async function save(part, debug, nochange) {
       delete changes[path];
       continue;
     } 
-
     if (spl.length == 1) {
       changes[path] = JSON.stringify({[spl[0]]: part[e]});
       continue;
     }
-
     spl.forEach((el, i) => {
       arr[i][el] ??= {};
       arr[i + 1] = arr[i][el];
     });
-
     arr.at(-2)[spl.at(-1)] = part[e];
     changes[path] ??= {}
-    changes[path] = {...changes[path], j};
+    changes[path][spl.at(-1)] = part[e]
   }
 
   console.log('jchanges:', changes);
@@ -882,8 +881,8 @@ async function save(part, debug, nochange) {
   }, {});
   await chrome.storage.local.set(k);
   console.log("changes:", changes);
-  // bounceSave();
-  // save_rdy = 1;
+  bounceSave();
+  save_rdy = 1;
 }
 
 function cloudSave() {
