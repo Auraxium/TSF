@@ -221,7 +221,7 @@ let clickable = {
       later[user_login] = vod;
       save({
         [`later.${user_login}`]: vod,
-        [`later.${vod_id}`]: vod,
+        // [`later.${vod_id}`]: vod,
       });
     });
   },
@@ -779,6 +779,7 @@ async function auth() {
     })
       .then((res) => res.json())
       .then(async (res) => {
+        console.log(1)
         cred = { ...cred, ...res.cred, device: Math.random().toString(27).slice(2, 12) };
         // save({ cred });
         console.log("cred", cred);
@@ -790,7 +791,7 @@ async function auth() {
           cache.last_load = Date.now(); //{ expire: Date.now() + 60000, res: res.data };
           await chrome.storage.local.set({ cache });
         }
-
+        console.log('ahjksldfhaik')
         document.getElementById("in").style.display = "flex";
         document.getElementById("out").style.display = "none";
         nav("main");
@@ -838,62 +839,77 @@ async function save(part, debug, nochange) {
 
   // let changes = {
   //   "a.b": JSON.stringify({ a: { b: { d: "werk" } } }),
+  //   "a.b": JSON.stringify({ a: { b: { e: "gad" } } }),
   //   "j.k": JSON.stringify({ j: { k: { l: "jacob" } } }),
   //   $: JSON.stringify({ d: "drink" }),
   // };
+
+  /*
+    "a.b"
+  */ 
 
   // save({ [`later.${vod_id}`]: later[vod_id] });
 
   let hold = '';
   let j = {};
-  for (let e in part) {
+  let c = 1;
+  part = {...part}
+  for (let key in part) {
     let arr = [j];
-    let spl = e.split(".");
+    let spl = key.split(".");
     log.add(spl[0]);
     if (!change_filt.has(spl[0])) continue;
-    let path = spl.slice(0,-1).join('.') || (Math.random()+'').slice(2);
-    console.log('path n spl:', path, spl)
-    if (part[e] == "$") {
-      $unset.add(e);
-      delete changes[path];
+    // let key = e + JSON.stringify(part[e])
+    // let path = spl.slice(0,-1).join('.') || (Math.random()+'').slice(2);
+    // console.log('path n spl:', path, spl)
+
+    if (part[key] == "$") {
+      $unset.add(key);
+      delete changes[key];
       continue;
     } 
 
-    if (spl.length == 1) {
-      changes[path] = JSON.stringify({[spl[0]]: part[e]});
-      continue;
-    }
+    // if (spl.length == 1) {
+    //   changes[path] = JSON.stringify({[spl[0]]: part[e]});
+    //   continue;
+    // }
 
     spl.forEach((el, i) => {
       arr[i][el] ??= {};
       arr[i + 1] = arr[i][el];
     });
 
-    arr.at(-2)[spl.at(-1)] = part[e];
-    changes[path] ??= {}
-    changes[path] = {...changes[path], j};
+    arr.at(-2)[spl.at(-1)] = part[key];
+    changes[key] = {...j}
   }
 
   console.log('jchanges:', changes);
 
+  console.log('log', [...log])
   let k = [...log].reduce((acc, e) => {
+    // console.log('saving:', e, acc)
     acc[e] = globalThis[e];
     return acc;
   }, {});
   await chrome.storage.local.set(k);
-  console.log("changes:", changes);
-  // bounceSave();
-  // save_rdy = 1;
+  bounceSave();
+  save_rdy = 1;
 }
 
 function cloudSave() {
   if (!Object.keys(changes).length && !$unset.size) return;
   console.log("cloud saving:", changes);
-  changes.device = JSON.stringify({device: cred.device});
-  changes.date = JSON.stringify({date: Date.now()});
+  changes.device ={device: cred.device}
+  // changes.date = {date: Date.now()}
+  let morph = []
+  for (let key in changes) {
+    let path = key.split('.').slice(0,-1).join("") || Math.random().toString(27).slice(2,7);
+    morph.push(`${path}|${JSON.stringify(changes[key])}`)
+  }
+  console.log('morph:' , morph)
   fetch(port + "/tsfSave", {
     method: "POST",
-    body: JSON.stringify({ changes, $unset: [...$unset] }),
+    body: JSON.stringify({ changes: morph, $unset: [...$unset] }),
     headers: {
       Authorization: `Bearer ${cred.jwt}`,
       "Content-Type": "application/json",
@@ -938,6 +954,7 @@ async function cloudLoad(force) {
 
 async function main() {
   const keys = ["streamer_cache", "favorites", "cred", "config", "later", "channels", "cache"];
+  // chrome.storage.local.clear()
   chrome.storage.local.get(keys).then((res) => {
     for (const key of keys) if (res[key]) globalThis[key] = res[key];
 
