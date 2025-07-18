@@ -130,29 +130,36 @@
 			<div page="vof" style="flex-direction: column;"></div>
 			<div page="recent" style="flex-direction: column;"></div>
 			<div page="channels" style="flex-direction: column;"></div>
-
 			<div page="config" style="flex-direction: column;">
 				<!-- <div class="flex gap space-evenly">
 					<div class="button hl cbut" data-type="cs" style="font-size: 14px; width: 150px; height: 45px">Cloud Save</div>
 					<div class="button hl cbut" data-type="cl" style="font-size: 14px; width: 150px; height: 45px">Cloud Load</div>
 				</div>
 				<div class="flex gap space-evenly">
-					<div class="button hl cbut" data-type="fs" style="font-size: 14px; width: 150px; height: 45px">File Save</div>
 					
 				</div> -->
 				<div class="flex space-evenly">
+					<div class="button hl cbut fs" data-type="fs" style="font-size: 14px; width: 150px; height: 45px">File Save</div>
 					<div class="button hl cbut fl" data-type="fl" style="font-size: 14px; width: 150px; height: 45px">File Load</div>
-					<div class="button hl cbut cloudload" style="font-size: 14px; width: 150px; height: 45px">Force Cloud Load</div>
+					<div class="button hl cbut cloudload" style="font-size: 14px; width: 150px; height: 45px">Cloud Load</div>
 					<div style="height: 40px" class="logout button cursor bg-purple">Logout</div>
 					<div style="height: 40px" class="reset button cursor bg-red">Reset Profile</div>
 				</div>
 
 				<div class="option pk hl2" data-option="cs" >
 					<span>Enable Twitch.tv plugin</span>
-					<input type="checkbox" style="position: relative; left: 9,5%" name="" checked id="">
+					<input type="checkbox" style="position: relative; left: 9,5%" name="" checked id=""/>
 				</div>
 				<div class="button hl debug">Debug</div>
 				<div class="button hl clca">Clear Cache</div>
+				<div class="support">
+            		<img height="18" width="26" src="https://storage.ko-fi.com/cdn/logomarkLogo.png" alt="" />
+					<span>Support Me</span>
+				</div>
+				 <!-- <div className="fixed right-0 bottom-0 flex items-center border border-[#555] p-1 gap-1 cursor-pointer" onClick={() => ipcFetch('support')}>
+            <img height={18} width={26} src="https://storage.ko-fi.com/cdn/logomarkLogo.png" alt="" />
+            <span>Support Me</span>
+          </div> -->
 			</div>
 		</div>
 	</div>
