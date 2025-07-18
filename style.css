@@ -53,7 +53,7 @@ body {
 }
 
 .container {
-  width: 550px;
+  width: 580px;
   min-height: 600px;
   max-height: 600px;
   border-style: solid;
@@ -162,6 +162,10 @@ body {
 }
 
 .pk * {
+  pointer-events: none;
+}
+
+.pen * {
   pointer-events: none;
 }
 
@@ -345,20 +349,7 @@ body {
 
 }
 
-.support {
-  position: absolute;
-  right: 0.5%;
-  bottom: 0.5%;
-  height: 22px;
-  width: content; 
-  display: flex;
-  align-items: center;
-  border: #555 solid 1px;
-  padding: 1px;
-  gap: 1px;
-  cursor: pointer;
-  font-size: 16px;
-}
+
 
 .buts>* {
   /* position: fixed; */
@@ -413,12 +404,13 @@ body {
 .option {
   height: 40px;
   width: 100%;
-  background-color: #000000;
+  background-color: #000;
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-size: 22px;
   padding: 0 4px;
+  border: #777 solid 1px
 }
 
 .hl2:hover {
@@ -432,4 +424,22 @@ body {
 
 .w-full {
   width: 100%;
+}
+
+.support {
+  position: absolute;
+  right: 0.5%;
+  bottom: 0.5%;
+  height: 48px;
+  width: 128px;
+  width: content; 
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: #555 solid 1px;
+  padding: 1px;
+  gap: 1px;
+  cursor: pointer;
+  font-size: 15px;
+  background-color: #000000;
 }
