@@ -17,8 +17,8 @@ let save_map = {
   cache,
 };
 
-let port = "http://localhost:3145";
-// let port = "https://misc.auraxium.dev";
+// let port = "http://localhost:3145";
+let port = "https://misc.auraxium.dev";
 let lives_save = {};
 let temp;
 let icon_size = 28;
@@ -398,6 +398,7 @@ let page_cb = {
     }, {});
 
     let favs = lives.data.filter((e) => favorites[e.user_name.toLowerCase()]);
+    let live_list = config.remove_dups ? lives.data.filter(e => !favorites[e.user_login]) : [...lives.data]
     let str = "";
 
     if (current) {
@@ -414,8 +415,8 @@ let page_cb = {
     str += `<div class="label section" >Favorites (${favs.length})</div>`;
     str += `<div class="main_favs">${favs.map((e) => stream(e)).join("")}</div>`;
     if (favs.length) str += `<div class="get-vods button bg-dark hl cursor vof-but, get-vods">Get Vods</div>`;
-    str += `<div class="label" style="font-size: 18px; border-bottom: 1px solid">Streams (${lives.data.length})</div>`;
-    str += lives.data.map((e) => stream(e)).join("");
+    str += `<div class="label" style="font-size: 18px; border-bottom: 1px solid">Streams (${live_list.length})</div>`;
+    str += live_list.map((e) => stream(e)).join("");
     // lives.data.forEach(e => str += stream(e));
     str += `<div class="button bg-dark hl cursor get-offline, channels-but">Show All</div>`;
 
@@ -846,7 +847,8 @@ async function auth() {
           await chrome.storage.local.set({ cache });
           return main();
         } else {
-          changes = { favorites, config, later }; //chrome.storage.local.get(['favorites', 'config', 'later'])
+          //changes = { favorites, config, later }; //chrome.storage.local.get(['favorites', 'config', 'later'])
+          save(changes)
           bounceSave();
         }
         // console.log("ahjksldfhaik");
@@ -897,7 +899,6 @@ function hardSave() {
 
 async function save(part, debug, nochange) {
   let log = new Set();
-
   let j = {};
   let c = 1;
   part = { ...part };
@@ -906,8 +907,8 @@ async function save(part, debug, nochange) {
     let spl = key.split(".");
     log.add(spl[0]);
     if (!change_filt.has(spl[0])) continue;
+    save_rdy = 1;
     let path = spl.slice(0, -1).join(".");
-
     if (!path) {
       if (part[key] == "$") {
         delete changes[key];
@@ -928,9 +929,9 @@ async function save(part, debug, nochange) {
     $unset.delete(key);
   }
 
-  changes.device = cred.device;
-  changes.date = Date.now();
   morph ??= {};
+  morph.device = JSON.stringify({device: cred.device});
+  morph.date = JSON.stringify({date: Date.now()});
   for (let key in changes) {
     let j = {};
     let arr = [j];
@@ -951,7 +952,7 @@ async function save(part, debug, nochange) {
   await chrome.storage.local.set(k);
   // console.log("changes:", changes);
   bounceSave();
-  save_rdy = 1;
+  
 }
 
 function cloudSave() {
@@ -990,13 +991,12 @@ function cloudSave() {
   save_rdy = 0;
 }
 
-var bounceSave = debounce(cloudSave, 1000 * 3);
+var bounceSave = debounce(cloudSave, 1000 * 30);
 
 async function cloudLoad(force) {
   let now = Date.now();
   let cd = now - (cache.last_load || 0);
-  console.log(cache.last_load, now - cache.last_load, 1000 * 40 * 1);
-  if (force && cd < 1000 * 40 * 1) return console.log("too soon load");
+  if (force && cd < 1000 * 30 * 1) return console.log("still too soon load");
   else if (!force && cd < 1000 * 60 * 10) return console.log("too soon load");
   cache.last_load = now;
   await chrome.storage.local.set({ cache });
@@ -1009,13 +1009,14 @@ async function cloudLoad(force) {
   })
     .then((res) => res.json())
     .catch(console.log);
-  console.log("load:", res);
   if (!res) return console.log("no account");
-  if (res.device == cred.device) return console.log("no new save");
-  console.log("syncing save");
-  for (let key in res.data) if (res[key]) globalThis[key] = res[key];
+  if (!force && res.device == cred.device) return console.log("no new save");
+  console.log("syncing save:", res);
+  for (let key in res) {
+    if (res[key]) globalThis[key] = res[key];
+  } 
   await chrome.storage.local.set(res);
-  nav("main");
+  // nav("main");
   // main();
 }
 
@@ -1034,8 +1035,8 @@ async function main() {
       document.getElementById("out").style.display = "none";
     }
     if (Date.now() > (cache.expire || 0)) cache = { expire: Date.now() + 1000 * 60 * 60 * 24 * 13 };
-    nav("main");
-    cloudLoad();
+    // nav("main");
+    cloudLoad().then(res => nav("main")).catch(res => nav("main"));
   });
   // console.log(res)
 }
@@ -1046,17 +1047,17 @@ main();
 
 //#region EVENTS
 window.addEventListener("unload", () => {
-  // navigator.sendBeacon(port + "/tsfSave", JSON.stringify({ changes: morph, $unset, jwt: cred.jwt }));
   if (!save_rdy) return;
-  fetch(port + "/tsfSave", {
-    method: "POST",
-    body: JSON.stringify({ changes: morph, $unset: [...$unset] }),
-    headers: {
-      Authorization: `Bearer ${cred.jwt}`,
-      "Content-Type": "application/json",
-    },
-    keepalive: true,
-  });
+  navigator.sendBeacon(port + "/tsfSave", JSON.stringify({ changes: morph, $unset: [...$unset], jwt: cred.jwt }));
+  // fetch(port + "/tsfSave", {
+  //   method: "POST",
+  //   body: JSON.stringify({ changes: morph, $unset: [...$unset] }),
+  //   headers: {
+  //     Authorization: `Bearer ${cred.jwt}`,
+  //     "Content-Type": "application/json",
+  //   },
+  //   keepalive: true,
+  // });
 });
 
 document.querySelector(".auth").addEventListener("click", (e) => {
