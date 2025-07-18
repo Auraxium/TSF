@@ -56,7 +56,7 @@ let icons = {
  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
  <path d="M8.243 7.34l-6.38 .925l-.113 .023a1 1 0 0 0 -.44 1.684l4.622 4.499l-1.09 6.355l-.013 .11a1 1 0 0 0 1.464 .944l5.706 -3l5.693 3l.1 .046a1 1 0 0 0 1.352 -1.1l-1.091 -6.355l4.624 -4.5l.078 -.085a1 1 0 0 0 -.633 -1.62l-6.38 -.926l-2.852 -5.78a1 1 0 0 0 -1.794 0l-2.853 5.78z" stroke-width="0" fill="currentColor" />
  </svg>`,
-  later: (e, on, vod_id) => `<svg data-user_login="${e.user_login}" data-created_at="${e.created_at}" data-duration="${e.duration}" data-vod_id="${vod_id}" xmlns="http://www.w3.org/2000/svg" class="later ${on ? "icon-on bg-white" : "icon"}" width="${icon_size}" height="${icon_size}" viewBox="0 0 24 24" stroke-width="1.5" stroke="#${on ? "000000" : "ffffff"}" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  later: (e, on, vod_id) => `<svg data-user_login="${e.user_login}" data-created_at="${e.created_at || e.started_at}" data-duration="${e.duration}" data-vod_id="${vod_id}" xmlns="http://www.w3.org/2000/svg" class="later ${on ? "icon-on bg-white" : "icon"}" width="${icon_size}" height="${icon_size}" viewBox="0 0 24 24" stroke-width="1.5" stroke="#${on ? "000000" : "ffffff"}" fill="none" stroke-linecap="round" stroke-linejoin="round">
   <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
   <path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />
   <path d="M12 12l3 2" />
@@ -189,6 +189,7 @@ let clickable = {
 
     if (e.classList.contains("bg-white")) {
       //is on
+      (e.outerHTML = icons.later({ user_login, created_at, duration, id: vod_id }, 0, vod_id));
       if (!vod_id) vod_id = later[user_login].vod_id;
 
       if (later[vod_id].user_login == user_login) {
@@ -203,7 +204,7 @@ let clickable = {
         save({ [`later.${vod_id}`]: "$" });
       }
 
-      return (e.outerHTML = icons.later({ user_login, created_at, duration, id: vod_id }, 0, vod_id));
+      return 
     }
 
     e.outerHTML = icons.later({ user_login, created_at, duration, id: vod_id }, 1, vod_id);
@@ -221,12 +222,11 @@ let clickable = {
     axi(`https://api.twitch.tv/helix/videos?type=archive&first=1&user_id=${streamer_cache[user_login]?.id || 123}`, 1).then((res) => {
       console.log("later res:", res);
       let date = new Date(res.data[0].created_at).getTime();
-      if (!res || !res.data[0]?.created_at || now - date > 1000 * 60 * 60 * 24) {
+      if (!res || !res.data[0]?.created_at || Math.abs(date - new Date(res.data[0].created_at).getTime()) > 1000*60*60) {
         console.log("loss:", { now, ...res });
         return;
       }
       vod_id = res.data[0].id;
-      // console.log(e.target);
       let vod = {
         date,
         vod_id,
@@ -564,7 +564,10 @@ function stream(e) {
   let img = streamer_cache[e.user_login].profile_image_url;
   if (later[e.user_login] && Date.now() - later[e.user_login].date < 1000 * 60 * 60 * 20) {
     later_on = 1;
-  } else delete later[e.user_login];
+  } else  {
+    delete later[e.user_login];
+    save({[`later.${e.user_login}`]: '$'})
+  }
   // later_on = later[e.user_login] && Date.now() - later[e.user_login].date < 1000*360*18
 
   return `<div title="${escapeHTML(e.title)}" class="stream hl" data-user_login="${e.user_login}">
@@ -871,6 +874,11 @@ var $ = (s) => {
   let a = [...document.querySelectorAll(s)];
   return !a.length ? null : a.length == 1 ? a[0] : a;
 };
+
+function hardSave() {
+  if(!cred.jwt) return;
+  
+}
 
 async function save(part, debug, nochange) {
   let log = new Set();
