@@ -272,11 +272,11 @@ let clickable = {
       .join("");
   },
   trash: (e) => {
-    console.log(e.target.dataset.vod_id, later[e.target.dataset.vod_id], later);
+    // console.log(e.target.dataset.vod_id, later[e.target.dataset.vod_id], later);
     let { vod_id, user_login } = e.target.dataset;
     delete later[vod_id];
     if (later[user_login]?.vod_id == vod_id) delete later[user_login];
-    save({ [`later.${user_login}`]: "$" }, 1);
+    save({ [`later.${vod_id}`]: "$" }, 1);
     e.target.parentElement.parentElement.parentElement.parentElement.remove();
   },
   "config-but": (e) => nav("config"),
@@ -295,7 +295,7 @@ let clickable = {
   },
   reset: async (e) => {
     await chrome.storage.local.clear();
-    await fetch(port + "/tsfDelete", {
+    fetch(port + "/tsfDelete", {
       headers: {
         Authorization: `Bearer ${cred.jwt}`,
         "Content-Type": "application/json",
@@ -375,7 +375,6 @@ let clickable = {
     save({ cache });
   },
   support: (e) => {
-    console.log("opening support");
     window.open(`https://ko-fi.com/auraxium`);
   },
 };
@@ -900,7 +899,6 @@ function hardSave() {
 async function save(part, debug, nochange) {
   let log = new Set();
   let j = {};
-  let c = 1;
   part = { ...part };
   for (let key in part) {
     let arr = [changes];

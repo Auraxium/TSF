@@ -7,7 +7,9 @@ var later = {};
 var config = { cs: 1 };
 var cache = {};
 
-let sidebar_query = ".Layout-sc-1xcs6mc-0.kHqXhd.side-nav";
+// let port = "http://localhost:3145";
+let port = "https://misc.auraxium.dev";
+let sidebar_query = ".Layout-sc-1xcs6mc-0.dtSdDz";
 let list = [".haGrcr", '[role="group"]'];
 let imgs = [];
 let interval;
@@ -18,6 +20,7 @@ let icon = `${center} padding: 2px;`;
 let current_name;
 let lon = "#813ade";
 let la;
+let change_filt = new Set(["config", "favorites", "later"]);
 
 let observer;
 
@@ -25,30 +28,10 @@ let ctx = {};
 let channels = {};
 let cur_ctx;
 
-function check() {
-  if (!document.querySelector(".tsf-favs"))
-    document.querySelector(".simplebar-content").insertAdjacentHTML(
-      "afterbegin",
-      `<div class="tsf-favs" style="padding: 2px; margin-top: 9px ">
-      </div>`
-    );
-  getFavs();
-  addBar();
-}
-
 let icons = {
   later: (e = {}) => {
-    let user_login =
-      e.user_login ||
-      document.querySelector("h1.tw-title")?.innerHTML.toLowerCase() ||
-      null;
-    let ind =
-      e.ind == -1
-        ? false
-        : window.location.href.includes("videos")
-        ? window.location.pathname.split("/").at(-1)
-        : current_name ||
-          document.querySelector("h1.tw-title").innerHTML.toLowerCase();
+    let user_login = e.user_login || document.querySelector("h1.tw-title")?.innerHTML.toLowerCase() || null;
+    let ind = e.ind == -1 ? false : window.location.href.includes("videos") ? window.location.pathname.split("/").at(-1) : current_name || document.querySelector("h1.tw-title").innerHTML.toLowerCase();
     let ref = document.createElement("div");
     ref.style.display = "flex";
     ref.style.alignItems = "center";
@@ -61,16 +44,11 @@ let icons = {
     ref.setAttribute("onmouseover", `this.style.backgroundColor='#3c3f43'`);
     ref.setAttribute("onmouseout", `this.style.backgroundColor='#292d33'`);
     ref.setAttribute("title", "Watch Later");
-    ref.innerHTML = `<svg  xmlns="http://www.w3.org/2000/svg" user_login="${user_login}" style="pointer-events: none"  width="24"  height="24"  viewBox="0 0 24 24"  fill="none"  stroke="${
-      ind && later[ind] && Date.now() < later[ind].date ? lon : "#ffffff"
-    }"  stroke-width="2"  stroke-linecap="round"  stroke-linejoin="round"  class="icon icon-tabler icons-tabler-outline icon-tabler-clock-hour-4"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /><path d="M12 12l3 2" /><path d="M12 7v5" /></svg>`;
+    ref.innerHTML = `<svg  xmlns="http://www.w3.org/2000/svg" user_login="${user_login}" style="pointer-events: none"  width="24"  height="24"  viewBox="0 0 24 24"  fill="none"  stroke="${ind && later[ind] && Date.now() < later[ind].date ? lon : "#ffffff"}"  stroke-width="2"  stroke-linecap="round"  stroke-linejoin="round"  class="icon icon-tabler icons-tabler-outline icon-tabler-clock-hour-4"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /><path d="M12 12l3 2" /><path d="M12 7v5" /></svg>`;
     return ref;
   },
   star: (e = {}) => {
-    let user_login =
-      e.user_login ||
-      document.querySelector("h1.tw-title")?.innerHTML.toLowerCase() ||
-      null;
+    let user_login = e.user_login || document.querySelector("h1.tw-title")?.innerHTML.toLowerCase() || null;
     let ref = document.createElement("div");
     ref.style.display = "flex";
     ref.style.alignItems = "center";
@@ -95,10 +73,7 @@ let icons = {
     return ref;
   },
   vods: (e = {}) => {
-    let user_login =
-      e.user_login ||
-      document.querySelector("h1.tw-title")?.innerHTML.toLowerCase() ||
-      null;
+    let user_login = e.user_login || document.querySelector("h1.tw-title")?.innerHTML.toLowerCase() || null;
     let ref = document.createElement("div");
     ref.style.display = "flex";
     ref.style.alignItems = "center";
@@ -130,12 +105,8 @@ let icons = {
     ref.id = `sumb_${e.user_login}`;
     ref.setAttribute("sumb", "");
     ref.innerHTML = `
-      <div style="position: absolute; max-width: 330px; max-height: 46px; z-index: 100; border-radius: 4px; box-shadow: 5px 5px 10px 2px rgba(0,0,0,.8); background-color: #292d33; padding: 6px; overflow: hidden; text-overflow: ellipsis">${
-        e.title
-      }</div>
-      <img src="https://static-cdn.jtvnw.net/previews-ttv/live_user_${
-        e.user_login
-      }.jpg?timestamp=${Date.now()}" style="position: absolute; width: full; height: 248px; bottom: 0px; z-index: 99; border-radius: 4px; box-shadow: 5px 5px 10px 2px rgba(0,0,0,.8); " />
+      <div style="position: absolute; max-width: 330px; max-height: 46px; z-index: 100; border-radius: 4px; box-shadow: 5px 5px 10px 2px rgba(0,0,0,.8); background-color: #292d33; padding: 6px; overflow: hidden; text-overflow: ellipsis">${e.title}</div>
+      <img src="https://static-cdn.jtvnw.net/previews-ttv/live_user_${e.user_login}.jpg?timestamp=${Date.now()}" style="position: absolute; width: full; height: 248px; bottom: 0px; z-index: 99; border-radius: 4px; box-shadow: 5px 5px 10px 2px rgba(0,0,0,.8); " />
     `;
     ref.style.display = "none";
     ref.style.width = "640px";
@@ -206,6 +177,18 @@ async function axi(s) {
 
 function save(j, debug) {
   chrome.storage.local.set(j);
+  let key = Object.keys(j)[0];
+
+  if(change_filt.has(key))
+  fetch(port + "/tsfSave", {
+    method: "POST",
+    body: JSON.stringify({ changes: { [key]: JSON.stringify(j) }, $unset: [], source: 'cs' }),
+    headers: {
+      Authorization: `Bearer ${cred.jwt}`,
+      "Content-Type": "application/json",
+    },
+    keepalive: true,
+  }).catch(console.log);
   if (debug) console.log(j);
 }
 
@@ -222,18 +205,13 @@ function showThumbnail(event) {
   // console.log(img);
   let bound = this.getBoundingClientRect();
   img.style.left = bound.right + 12 + "px";
-  img.style.top =
-    event.clientY < screen.height / 2
-      ? bound.bottom - 20 + "px"
-      : bound.top - 248 + 120 + "px";
+  img.style.top = event.clientY < screen.height / 2 ? bound.bottom - 20 + "px" : bound.top - 248 + 120 + "px";
   img.style.display = "flex";
 }
 
 function hideThumbnail(event) {
   this.style.backgroundColor = "";
-  [...document.querySelectorAll("[sumb]")].forEach(
-    (el) => (el.style.display = "none")
-  );
+  [...document.querySelectorAll("[sumb]")].forEach((el) => (el.style.display = "none"));
   // let sumb = document.querySelector('#sumb_' + this.dataset.user_login)
   // if (sumb) sumb.style.display = 'none';
 }
@@ -245,28 +223,22 @@ function stream(e, now = Date.now()) {
   if (!img) {
     img = e.user_login;
     imgs.push({ id: e.user_id, login: e.user_login, cb: img });
-  } //else img = streamer_cache[e.user_login].profile_image_url;
+  }
 
   let sumb = document.querySelector(`#sumb_${e.user_login}`);
-  if (!sumb)
-    document.querySelector(".Layout-sc-1xcs6mc-0").prepend(icons.sumb(e));
+  if (!sumb) document.querySelector(".Layout-sc-1xcs6mc-0").prepend(icons.sumb(e));
   else {
     sumb.children[0].innerHTML = e.title;
     sumb.children[1].src = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${e.user_login}.jpg?timestamp=${now}`;
   }
 
-  return `<a style="all: unset; cursor: default; display: flex; padding: 0px 3px; box-sizing: border-box; align-items: center; justify-content: center; gap: 5px; height: 42px;"
-  data-user_login="${e.user_login}" 
-    
-    <img src=${img} style="width: 16%; padding: 4px; aspect-ratio: 1; border-radius: 99%" />
+  return `<a style="all: unset; cursor: default; display: flex; padding: 0px 3px; box-sizing: border-box; align-items: center; justify-content: center; gap: 5px; height: 42px; width: 100%"
+  data-user_login="${e.user_login}" onmouseover='${regex.exec(showThumbnail.toString())[1].trim()}' onmouseout='${regex.exec(hideThumbnail.toString())[1].trim()}' href="/${e.user_login}"  >
+    <img src="${img}" style="width: 18.5%; padding: 4px; aspect-ratio: 1; border-radius: 99%" />
 
     <div style="width: 59%; height: 100%; display: flex; flex-direction: column; justify-content: center; overflow-y: hidden; overflow-x: hidden;">
       <p style="font-weight: 600 !important; ">${e.user_name}</p>
-      <span title="${
-        e.game_name
-      }" style="white-space: nowrap; font-weight: 400 !important; color: #ADADB8; display: inline-block; line-height: 1;">${
-    e.game_name
-  }</span>
+      <span title="${e.game_name}" style="white-space: nowrap; font-weight: 400 !important; color: #ADADB8; display: inline-block; line-height: 1;">${e.game_name}</span>
     </div>
 
     <div style="width: 25%; height: 100%; display: flex; gap: 3px;  align-items: start; justify-content: center">
@@ -278,35 +250,36 @@ function stream(e, now = Date.now()) {
   </a>`;
 }
 
+function check() {
+  let tsf_el = document.querySelector(".tsf-favs");
+  let side_el = document.querySelector(sidebar_query);
+  if (!tsf_el || side_el.children[0] !== tsf_el) {
+    tsf_el?.remove();
+    side_el.insertAdjacentHTML("afterbegin", `<div class="tsf-favs" style="padding: 2px; margin-top: 9px"></div>`);
+  }
+  getFavs();
+  addBar();
+}
+
 async function getFavs(force) {
   // if(force) delete cache[`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`];
   // if (!document.querySelector(".tsf-favs") && !document.querySelector(sidebar_query)) return;
+  // console.log("getr favs still checking");
   if (!document.querySelector(".tsf-favs")) {
     if (!document.querySelector(sidebar_query)) return;
-    document
-      .querySelector(sidebar_query)
-      .insertAdjacentHTML(
-        "afterbegin",
-        `<div class="tsf-favs" style="padding: 2px; margin-top: 9px ">
+    document.querySelector(sidebar_query).insertAdjacentHTML(
+      "afterbegin",
+      `<div class="tsf-favs" style="padding: 2px; margin-top: 9px ">
+      
         </div>`
-      );
+    );
   }
 
-  lives = await axi(
-    `https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`
-  );
+  lives = await axi(`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`);
   // console.log('lives', lives);
   if (lives == 0) return;
-  if (
-    lives.cached &&
-    !force &&
-    document.querySelector(".tsf-favs")?.offsetHeight > 15
-  )
-    return;
-  if (!lives?.data?.length)
-    return delete cache[
-      `https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`
-    ];
+  if (lives.cached && !force && document.querySelector(".tsf-favs")?.offsetHeight > 15) return;
+  if (!lives?.data?.length) return delete cache[`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`];
   // if(lives.cached && document.querySelector('.tsf-favs')) return;
 
   let { now } = lives;
@@ -318,45 +291,41 @@ async function getFavs(force) {
   let favs = lives.data.filter((e) => favorites[e.user_name.toLowerCase()]);
 
   let str = `<div id="tsf_head" style="display: flex; align-items: center"> 
-      <h2 style="font-size: 14px; padding: 8px">TSF FAVORITES (${
-        favs.length
-      })</h2> 
+      <h2 style="font-size: 14px; padding: 8px">TSF FAVORITES (${favs.length})</h2> 
+      ${!cred.jwt ? `<div style="width: 100%; display: flex; justify-content: center">
+         <div class="auth" style="border: 1px solid white; background-color: blac,k; padding: 8px; cursor: pointer;" >Authorize</div>
+        </div> ` : ''}
      </div> 
       ${favs.map((e) => stream(e, now)).join("")}`;
 
   document.querySelector(".tsf-favs").innerHTML = str;
 
-  // if (imgs.length) {
-  //   let res = await axi(
-  //     "https://api.twitch.tv/helix/users?" +
-  //       imgs.map((e) => `id=${e.id}&`).join("")
-  //   );
-  //   res.data.forEach((e) => {
-  //     streamer_cache[e.login] = e;
-  //     document.querySelector(`[src="${e.login}"]`).src = e.profile_image_url;
-  //   });
-  //   save({ streamer_cache });
-  //   imgs = [];
-  // }
+  if (imgs.length) {
+    let res = await axi("https://api.twitch.tv/helix/users?" + imgs.map((e) => `id=${e.id}&`).join(""));
+    res.data.forEach((e) => {
+      streamer_cache[e.login] = e;
+      document.querySelector(`[src="${e.login}"]`).src = e.profile_image_url;
+    });
+    save({ streamer_cache });
+    imgs = [];
+  }
 
-  // [...document.querySelectorAll("[sumb]")].forEach((el) =>
-  //   el?.id && favorites[el.id.slice(5)] ? null : el.remove()
-  // );
+  [...document.querySelectorAll("[sumb]")].forEach((el) => (el?.id && favorites[el.id.slice(5)] ? null : el.remove()));
 
-  // document.querySelector('#tsf_head').appendChild(icons.refresh());
+  // document.querySelector("#tsf_head").appendChild(icons.refresh());
 }
 
 async function addBar() {
   if (document.querySelector("svg[data-fill]")) return;
 
   let laq = "div.Layout-sc-1xcs6mc-0.hnHqxZ"; //'[data-target="channel-header-right"]' //'.Layout-sc-1xcs6mc-0.ktLpvM'
-  console.log("searching for staringing");
+  // console.log("searching for staringing");
 
   while (!document.querySelector(laq)) {
-    console.log("searching for laq", document.querySelector(laq));
+    // console.log("searching for laq", document.querySelector(laq));
     await Delay(1000);
   }
-  console.log("found laq:", document.querySelector(laq));
+  // console.log("found laq:", document.querySelector(laq));
 
   // while (!document.querySelector('.Layout-sc-1xcs6mc-0.lmNILC')) {
   //   console.log('searching for laq container', document.querySelector(laq));
@@ -380,50 +349,13 @@ async function main() {
   // observer.observe(document.body, { childList: true, subtree: true });
   // return
   console.log("TSF: GETTING KEYS");
-  const keys = [
-    "streamer_cache",
-    "favorites",
-    "cred",
-    "config",
-    "later",
-    "channels",
-    "cache",
-  ];
+  const keys = ["streamer_cache", "favorites", "cred", "config", "later", "channels", "cache"];
   let res = await chrome.storage.local.get(keys);
   for (const key of keys) if (res[key]) globalThis[key] = res[key];
   if (!config.cs) return console.log("TSF cs disabled");
-  if (Date.now() > (cache.expire || 0))
-    cache = { expire: Date.now() + 1000 * 60 * 60 * 24 * 13 };
+  if (Date.now() > (cache.expire || 0)) cache = { expire: Date.now() + 1000 * 60 * 60 * 24 * 13 };
 
   chrome.runtime.sendMessage({ open: window.location.href });
-
-  if (!cred.access_token || !cred.jwt) {
-    let getAuths = () => {
-      if (
-        !document.querySelector(".tsf-favs") ||
-        document.querySelector(".tsf-favs").offsetHeight < 20
-      ) {
-        document.querySelector(".simplebar-content").insertAdjacentHTML(
-          "afterbegin",
-          `<div class="tsf-favs" style="padding: 2px; margin-top: 9px ">
-        <h2 style="font-size: 14px; padding: 8px">TSF FAVORITES</h2>
-        <div style="width: 100%; display: flex; justify-content: center">
-         <div class="auth" style="border: 1px solid white; background-color: blac,k; padding: 8px; cursor: pointer;" >Authorize</div>
-        </div> 
-        </div>`
-        );
-      }
-    };
-
-    let check = () => {
-      if (!cred.access_token && !document.querySelector(".tsf-favs"))
-        getAuths();
-    };
-    observer = setInterval(check, 2000);
-    Delay(1000 * 60 * 1).then(() => clearInterval(observer));
-
-    return console.log("TSF no access token");
-  }
 
   getFavs();
   interval = setInterval(getFavs, 1000 * 60 * 2.5);
@@ -455,7 +387,7 @@ document.addEventListener("contextmenu", (e) => {
   if (split.length != 2) return;
   let user_login = split.at(-1);
   if (!user_login) return;
-  if (user_login == cur_ctx) return;
+  if (cur_ctx && user_login == cur_ctx && cur_ctx.stlye.diplay != 'none') return;
 
   if (!document.querySelector("#tsf_ctx")) return; //document.querySelector('.Layout-sc-1xcs6mc-0').prepend(icons.ctx());
 
@@ -470,13 +402,7 @@ document.addEventListener("contextmenu", (e) => {
   ctx.setAttribute("user_login", user_login);
 
   ctx.innerHTML = `
-    ${
-      streamer_cache[user_login]
-        ? `<img src="${
-            streamer_cache[user_login]?.profile_image_url || -1
-          }" onpointerdown="window.open('https://www.twitch.tv/${user_login}')" style="width: 50px; padding: 4px; aspect-ratio: 1; border-radius: 99%" />`
-        : ""
-    }
+    ${streamer_cache[user_login] ? `<img src="${streamer_cache[user_login]?.profile_image_url || -1}" onpointerdown="window.open('https://www.twitch.tv/${user_login}')" style="width: 50px; padding: 4px; aspect-ratio: 1; border-radius: 99%" />` : ""}
     ${channels[user_login] ? icons.star({ user_login }).outerHTML : ""}
     ${icons.vods({ user_login }).outerHTML}
     ${icons.later({ user_login, ind: -1 }).outerHTML}
@@ -487,15 +413,10 @@ let clickable = {
   "icon-tabler-star": async (e) => {
     let el = e.target.dataset.fill ? e.target : e.target.firstElementChild;
     // console.log(el);
-    let user_login =
-      el.getAttribute("user_login") ||
-      document.querySelector("h1.tw-title")?.innerHTML.toLowerCase() ||
-      null;
+    let user_login = el.getAttribute("user_login") || document.querySelector("h1.tw-title")?.innerHTML.toLowerCase() || null;
     if (!user_login) return console.log("no ul");
     // console.log(user_login);
-    favorites = await chrome.storage.local
-      .get(["favorites"])
-      .then((res) => res.favorites || {});
+    favorites = await chrome.storage.local.get(["favorites"]).then((res) => res.favorites || {});
     if (el.getAttribute("data-fill") == "off") {
       favorites[user_login] = 1;
       el.outerHTML = `<svg data-fill='on' user_login="${user_login}" style="pointer-events: none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" class="icon icon-tabler icons-tabler-filled icon-tabler-star">
@@ -516,30 +437,14 @@ let clickable = {
   "icon-tabler-movie": (e) => {
     let ctrl = e.ctrlKey;
     let el = e.target.firstElementChild;
-    ctrl
-      ? window.open(
-          `https://www.twitch.tv/${el.getAttribute(
-            "user_login"
-          )}/videos?filter=archives&sort=time`
-        )
-      : (window.location = `https://www.twitch.tv/${el.getAttribute(
-          "user_login"
-        )}/videos?filter=archives&sort=time`);
+    ctrl ? window.open(`https://www.twitch.tv/${el.getAttribute("user_login")}/videos?filter=archives&sort=time`) : (window.location = `https://www.twitch.tv/${el.getAttribute("user_login")}/videos?filter=archives&sort=time`);
   },
   "icon-tabler-clock-hour-4": async (e) => {
     let el = e.target.firstElementChild;
-    let user_login =
-      el.getAttribute("user_login") ||
-      document.querySelector("h1.tw-title")?.innerHTML.toLowerCase() ||
-      null;
-    let ind = window.location.href.includes("videos")
-      ? window.location.pathname.split("/").at(-1)
-      : current_name ||
-        document.querySelector("h1.tw-title").innerHTML.toLowerCase();
+    let user_login = el.getAttribute("user_login") || document.querySelector("h1.tw-title")?.innerHTML.toLowerCase() || null;
+    let ind = window.location.href.includes("videos") ? window.location.pathname.split("/").at(-1) : current_name || document.querySelector("h1.tw-title").innerHTML.toLowerCase();
 
-    later = await chrome.storage.local
-      .get(["later"])
-      .then((res) => res.later || {});
+    later = await chrome.storage.local.get(["later"]).then((res) => res.later || {});
     if (el.getAttribute("stroke") == lon) {
       // wl on, turn it off
       el.setAttribute("stroke", "#ffffff");
@@ -551,11 +456,7 @@ let clickable = {
       // wl off, turn it on
       el.setAttribute("stroke", lon);
 
-      if (
-        window.location.href.includes("videos") &&
-        user_login ==
-          document.querySelector("h1.tw-title")?.innerHTML.toLowerCase()
-      ) {
+      if (window.location.href.includes("videos") && user_login == document.querySelector("h1.tw-title")?.innerHTML.toLowerCase()) {
         later[ind] = {
           date: Date.now(),
           user_login: current_name,
@@ -567,25 +468,14 @@ let clickable = {
       }
 
       if (!streamer_cache[user_login])
-        await axi(`https://api.twitch.tv/helix/users?login=${user_login}`).then(
-          (res) => {
-            if (!res.data[0]) return console.log("huh");
-            streamer_cache[user_login] = res.data[0];
-            save({ streamer_cache });
-          }
-        );
+        await axi(`https://api.twitch.tv/helix/users?login=${user_login}`).then((res) => {
+          if (!res.data[0]) return console.log("huh");
+          streamer_cache[user_login] = res.data[0];
+          save({ streamer_cache });
+        });
 
-      axi(
-        `https://api.twitch.tv/helix/videos?type=archive&first=1&user_id=${
-          streamer_cache[user_login]?.id || 123
-        }`
-      ).then((res) => {
-        if (
-          !res ||
-          !res.data[0]?.created_at ||
-          Date.now() - new Date(res.data[0].created_at).getTime() >
-            1000 * 60 * 60 * 24
-        ) {
+      axi(`https://api.twitch.tv/helix/videos?type=archive&first=1&user_id=${streamer_cache[user_login]?.id || 123}`).then((res) => {
+        if (!res || !res.data[0]?.created_at || Date.now() - new Date(res.data[0].created_at).getTime() > 1000 * 60 * 60 * 24) {
           return console.log("loss:", res);
         }
         let date = Date.now() + 1000 * 60 * 60 * 10;
@@ -606,11 +496,7 @@ let clickable = {
     save({ later });
   },
   auth: (e) => {
-    let popup = window.open(
-      "https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=0helgn8mxggk3ffv53sxgqrmkdojb3&redirect_uri=https://misc.auraxium.dev/twotch&scope=user%3Aread%3Afollows&state=${window.location.href}",
-      "popup",
-      "popup=true"
-    );
+    let popup = window.open("https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=0helgn8mxggk3ffv53sxgqrmkdojb3&redirect_uri=https://misc.auraxium.dev/twotch&scope=user%3Aread%3Afollows&state=${window.location.href}", "popup", "popup=true");
 
     let auth = (event) => {
       // console.log(event.data);
@@ -634,23 +520,49 @@ let clickable = {
       popup.close();
 
       cred.access_token = ac;
-      axi("https://api.twitch.tv/helix/users").then((res) => {
-        console.log(res);
-        cred = { ...cred, ...res.data[0] };
-        console.log(cred);
-        save({ cred });
-        main();
-        // window.location.reload()
-      });
+      fetch(port + "/tsfJWT", {
+        method: "POST",
+        body: JSON.stringify({ access_token: ac }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+        .then((res) => res.json())
+        .then(async (res) => {
+          console.log(1);
+          cred = {
+            ...cred,
+            ...res.cred,
+            device: Math.random().toString(27).slice(2, 12),
+          };
+          // save({ cred });
+          console.log("cred", cred);
+          await chrome.storage.local.set({ cred });
+          if (res.data) {
+            for (let key in res.data) globalThis[key] = res.data[key];
+            console.log("had data:", res.data);
+            await chrome.storage.local.set(res.data);
+            cache.last_load = Date.now(); //{ expire: Date.now() + 60000, res: res.data };
+            await chrome.storage.local.set({ cache });
+            return main();
+          } else {
+            //changes = { favorites, config, later }; //chrome.storage.local.get(['favorites', 'config', 'later'])
+            save(res.data);
+          }
+          // console.log("ahjksldfhaik");
+         
+          main();
+          // window.location.reload()
+        })
+        .catch(console.log);
     };
 
     window.addEventListener("message", auth, false);
   },
 };
 
-document.addEventListener("click", (e) => {
-  if (e.target?.classList)
-    [...e.target.classList].forEach((el) => clickable[el] && clickable[el](e));
+window.addEventListener("click", (e) => {
+  if (e.target?.classList) [...e.target.classList].forEach((el) => clickable[el] && clickable[el](e));
   if (ctx?.style?.display == "flex") {
     ctx.style.display = "none";
     cur_ctx = "";
@@ -661,34 +573,23 @@ let ctxable = {
   "icon-tabler-movie": async (e) => {
     let ctrl = e.ctrlKey;
     let el = e.target.firstElementChild;
-    let user_login =
-      el.getAttribute("user_login") ||
-      document.querySelector("h1.tw-title")?.innerHTML.toLowerCase() ||
-      null;
+    let user_login = el.getAttribute("user_login") || document.querySelector("h1.tw-title")?.innerHTML.toLowerCase() || null;
     e.preventDefault();
     e.stopPropagation();
     if (!streamer_cache[user_login])
-      await axi(`https://api.twitch.tv/helix/users?login=${user_login}`).then(
-        (res) => {
-          if (!res.data[0]) return console.log("huh");
-          streamer_cache[user_login] = res.data[0];
-          save({ streamer_cache });
-        }
-      );
+      await axi(`https://api.twitch.tv/helix/users?login=${user_login}`).then((res) => {
+        if (!res.data[0]) return console.log("huh");
+        streamer_cache[user_login] = res.data[0];
+        save({ streamer_cache });
+      });
     let id = streamer_cache[user_login].id;
-    axi(`https://api.twitch.tv/helix/videos?type=archive&user_id=${id}`).then(
-      (res) =>
-        ctrl
-          ? window.open(`https://www.twitch.tv/videos/${res.data[0].id}`)
-          : (window.location = `https://www.twitch.tv/videos/${res.data[0].id}`)
-    );
+    axi(`https://api.twitch.tv/helix/videos?type=archive&user_id=${id}`).then((res) => (ctrl ? window.open(`https://www.twitch.tv/videos/${res.data[0].id}`) : (window.location = `https://www.twitch.tv/videos/${res.data[0].id}`)));
     // .then(res => ctrl ? window.open(`https://www.twitch.tv/videos/${res.data[0].id}`) : window.location = `https://www.twitch.tv/videos/${res.data[0].id}`);
   },
 };
 
 document.addEventListener("contextmenu", (e) => {
-  if (e.target?.classList)
-    [...e.target.classList].forEach((el) => ctxable[el] && ctxable[el](e));
+  if (e.target?.classList) [...e.target.classList].forEach((el) => ctxable[el] && ctxable[el](e));
 });
 
 let midable = {
@@ -698,31 +599,24 @@ let midable = {
     // let el = e.target.firstElementChild;
     // window.open(`https://www.twitch.tv/${el.getAttribute('user_login')}/videos?filter=archives&sort=time`);
     let el = e.target.firstElementChild;
-    let user_login =
-      el.getAttribute("user_login") ||
-      document.querySelector("h1.tw-title")?.innerHTML.toLowerCase() ||
-      null;
+    let user_login = el.getAttribute("user_login") || document.querySelector("h1.tw-title")?.innerHTML.toLowerCase() || null;
     e.preventDefault();
     e.stopPropagation();
     if (!streamer_cache[user_login])
-      await axi(`https://api.twitch.tv/helix/users?login=${user_login}`).then(
-        (res) => {
-          if (!res.data[0]) return console.log("huh");
-          streamer_cache[user_login] = res.data[0];
-          save({ streamer_cache });
-        }
-      );
+      await axi(`https://api.twitch.tv/helix/users?login=${user_login}`).then((res) => {
+        if (!res.data[0]) return console.log("huh");
+        streamer_cache[user_login] = res.data[0];
+        save({ streamer_cache });
+      });
     let id = streamer_cache[user_login].id;
-    axi(`https://api.twitch.tv/helix/videos?type=archive&user_id=${id}`).then(
-      (res) => window.open(`https://www.twitch.tv/videos/${res.data[0].id}`)
-    );
+    axi(`https://api.twitch.tv/helix/videos?type=archive&user_id=${id}`).then((res) => window.open(`https://www.twitch.tv/videos/${res.data[0].id}`));
   },
 };
 
 document.addEventListener("mousedown", (e) => {
   if (e.button != 1) return;
-  if (e.target?.classList)
-    [...e.target.classList].forEach((el) => midable[el] && midable[el](e));
+  // ctx.style.display = "none";
+  if (e.target?.classList) [...e.target.classList].forEach((el) => midable[el] && midable[el](e));
 });
 
 // cmt = {
