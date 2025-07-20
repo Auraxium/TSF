@@ -21,12 +21,14 @@ let current_name;
 let lon = "#813ade";
 let la;
 let change_filt = new Set(["config", "favorites", "later"]);
+let $unset = new Set();
 
 let observer;
 
 let ctx = {};
 let channels = {};
 let cur_ctx;
+let lives_str = "";
 
 let icons = {
   later: (e = {}) => {
@@ -177,18 +179,33 @@ async function axi(s) {
 
 function save(j, debug) {
   chrome.storage.local.set(j);
-  let key = Object.keys(j)[0];
 
-  if(change_filt.has(key))
-  fetch(port + "/tsfSave", {
-    method: "POST",
-    body: JSON.stringify({ changes: { [key]: JSON.stringify(j) }, $unset: [], source: 'cs' }),
-    headers: {
-      Authorization: `Bearer ${cred.jwt}`,
-      "Content-Type": "application/json",
-    },
-    keepalive: true,
-  }).catch(console.log);
+  let morph;
+  for (let key in j) {
+    // console.log(key);
+    if (!change_filt.has(key)) continue;
+    morph ??= {};
+    morph[key] = JSON.stringify({ [key]: j[key] });
+  }
+  // console.log(morph);
+
+  if (morph) {
+    morph.device = JSON.stringify({ device: cred.device });
+    morph.date = JSON.stringify({ date: Date.now() });
+    fetch(port + "/tsfSave", {
+      method: "POST",
+      body: JSON.stringify({ changes: morph, $unset: [...$unset], source: "cs" }),
+      headers: {
+        Authorization: `Bearer ${cred.jwt}`,
+        "Content-Type": "application/json",
+      },
+      keepalive: true,
+    })
+      .then(() => null)
+      .catch(() => null);
+  }
+
+  $unset.clear();
   if (debug) console.log(j);
 }
 
@@ -250,37 +267,37 @@ function stream(e, now = Date.now()) {
   </a>`;
 }
 
-function check() {
+function check(dontget) {
   let tsf_el = document.querySelector(".tsf-favs");
   let side_el = document.querySelector(sidebar_query);
   if (!tsf_el || side_el.children[0] !== tsf_el) {
     tsf_el?.remove();
-    side_el.insertAdjacentHTML("afterbegin", `<div class="tsf-favs" style="padding: 2px; margin-top: 9px"></div>`);
+    side_el.insertAdjacentHTML(
+      "afterbegin",
+      `<div class="tsf-favs" style="padding: 2px; margin-top: 9px">
+      ${
+        !cred.jwt
+          ? `<h2 style="font-size: 14px; padding: 8px">TSF FAVORITES</h2> <div style="width: 100%; display: flex; justify-content: center">
+         <div class="auth" style="border: 1px solid white; background-color: blac,k; padding: 8px; cursor: pointer;" >Authorize</div>
+        </div> `
+          : lives_str
+      }
+      </div>`
+    );
   }
-  getFavs();
+  if (!dontget) getFavs();
   addBar();
 }
 
 async function getFavs(force) {
   // if(force) delete cache[`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`];
-  // if (!document.querySelector(".tsf-favs") && !document.querySelector(sidebar_query)) return;
-  // console.log("getr favs still checking");
-  if (!document.querySelector(".tsf-favs")) {
-    if (!document.querySelector(sidebar_query)) return;
-    document.querySelector(sidebar_query).insertAdjacentHTML(
-      "afterbegin",
-      `<div class="tsf-favs" style="padding: 2px; margin-top: 9px ">
-      
-        </div>`
-    );
-  }
 
   lives = await axi(`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`);
   // console.log('lives', lives);
   if (lives == 0) return;
-  if (lives.cached && !force && document.querySelector(".tsf-favs")?.offsetHeight > 15) return;
+  // if (lives?.cached && !force && document.querySelector(".tsf-favs")?.offsetHeight > 15) return;
   if (!lives?.data?.length) return delete cache[`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`];
-  // if(lives.cached && document.querySelector('.tsf-favs')) return;
+  if (lives.cached && document.querySelector(".tsf-favs")) return;
 
   let { now } = lives;
   channels = lives.data.reduce((acc, e) => {
@@ -288,17 +305,18 @@ async function getFavs(force) {
     return acc;
   }, {});
   // console.log('channles:', channels, lives);
+  // favorites = await chrome.storage.local.get(['favorites']).then(res => ({...res.favorites}) || favorites)
   let favs = lives.data.filter((e) => favorites[e.user_name.toLowerCase()]);
 
-  let str = `<div id="tsf_head" style="display: flex; align-items: center"> 
+  if (!document.querySelector(".tsf-favs")) check(1);
+  lives_str = `
       <h2 style="font-size: 14px; padding: 8px">TSF FAVORITES (${favs.length})</h2> 
-      ${!cred.jwt ? `<div style="width: 100%; display: flex; justify-content: center">
-         <div class="auth" style="border: 1px solid white; background-color: blac,k; padding: 8px; cursor: pointer;" >Authorize</div>
-        </div> ` : ''}
-     </div> 
-      ${favs.map((e) => stream(e, now)).join("")}`;
+     ${favs.map((e) => stream(e, now)).join("")}
+     `;
 
-  document.querySelector(".tsf-favs").innerHTML = str;
+  //todo remove dupes from list here
+  document.querySelector(".tsf-favs").innerHTML = lives_str;
+  // console.log('I UPDATED THE SCRENE')
 
   if (imgs.length) {
     let res = await axi("https://api.twitch.tv/helix/users?" + imgs.map((e) => `id=${e.id}&`).join(""));
@@ -309,7 +327,6 @@ async function getFavs(force) {
     save({ streamer_cache });
     imgs = [];
   }
-
   [...document.querySelectorAll("[sumb]")].forEach((el) => (el?.id && favorites[el.id.slice(5)] ? null : el.remove()));
 
   // document.querySelector("#tsf_head").appendChild(icons.refresh());
@@ -344,11 +361,37 @@ async function addBar() {
   document.querySelector(".Layout-sc-1xcs6mc-0").prepend(icons.ctx());
 }
 
+async function cloudLoad(force) {
+  let now = Date.now();
+  let cd = now - (cache.last_load || 0);
+  if (force && cd < 1000 * 30 * 1) return console.log("still too soon load");
+  else if (!force && cd < 1000 * 60 * 10) return console.log("too soon load");
+  cache.last_load = now;
+  await chrome.storage.local.set({ cache });
+  let res = await fetch(port + "/tsfLoad", {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${cred.jwt}`,
+      "Content-Type": "application/json",
+    },
+  })
+    .then((res) => res.json())
+    .catch(() => null);
+  if (!res) return console.log("no account");
+  if (!force && res.device == cred.device) return console.log("no new save");
+  console.log("syncing save:", res);
+  for (let key in res) {
+    if (res[key]) globalThis[key] = res[key];
+  }
+  await chrome.storage.local.set(res);
+  // nav("main");
+  // main();
+}
+
 async function main() {
   // let observer = new MutationObserver(callback);
   // observer.observe(document.body, { childList: true, subtree: true });
   // return
-  console.log("TSF: GETTING KEYS");
   const keys = ["streamer_cache", "favorites", "cred", "config", "later", "channels", "cache"];
   let res = await chrome.storage.local.get(keys);
   for (const key of keys) if (res[key]) globalThis[key] = res[key];
@@ -356,6 +399,14 @@ async function main() {
   if (Date.now() > (cache.expire || 0)) cache = { expire: Date.now() + 1000 * 60 * 60 * 24 * 13 };
 
   chrome.runtime.sendMessage({ open: window.location.href });
+
+  await cloudLoad().then(() => {
+    let now = Date.now();
+    if (cred?.jwt && now > (cache.last_hard_save || 0)) {
+      cache.last_hard_save = now + 1000 * 60 * 60 * 24 * 13;
+      save({ favorites, config, later });
+    }
+  });
 
   getFavs();
   interval = setInterval(getFavs, 1000 * 60 * 2.5);
@@ -387,7 +438,7 @@ document.addEventListener("contextmenu", (e) => {
   if (split.length != 2) return;
   let user_login = split.at(-1);
   if (!user_login) return;
-  if (cur_ctx && user_login == cur_ctx && cur_ctx.stlye.diplay != 'none') return;
+  if (cur_ctx && user_login == cur_ctx && cur_ctx.stlye.diplay != "none") return;
 
   if (!document.querySelector("#tsf_ctx")) return; //document.querySelector('.Layout-sc-1xcs6mc-0').prepend(icons.ctx());
 
@@ -425,6 +476,7 @@ let clickable = {
       </svg>`;
     } else {
       delete favorites[user_login];
+      $unset.add(`favorites.${user_login}`);
       el.outerHTML = `<svg data-fill='off' user_login="${user_login}" style="pointer-events: none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-star">
         <path stroke="none" d="M0 0h24v24H0z" fill="none" />
         <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
@@ -451,7 +503,9 @@ let clickable = {
       let { user_login, vod_id } = later[ind];
       delete later[user_login];
       delete later[vod_id];
-      console.log(later[ind], later);
+      $unset.add(`later.${vod_id}`);
+      $unset.add(`later.${user_login}`);
+      // console.log(later[ind], later);
     } else {
       // wl off, turn it on
       el.setAttribute("stroke", lon);
@@ -529,7 +583,6 @@ let clickable = {
       })
         .then((res) => res.json())
         .then(async (res) => {
-          console.log(1);
           cred = {
             ...cred,
             ...res.cred,
@@ -547,14 +600,15 @@ let clickable = {
             return main();
           } else {
             //changes = { favorites, config, later }; //chrome.storage.local.get(['favorites', 'config', 'later'])
-            save(res.data);
+            cache.last_hard_save = Date.now() + 1000 * 60 * 60 * 24 * 13;
+            save({ favorites, config, later });
           }
           // console.log("ahjksldfhaik");
-         
+
           main();
           // window.location.reload()
         })
-        .catch(console.log);
+        .catch(() => null);
     };
 
     window.addEventListener("message", auth, false);

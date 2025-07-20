@@ -115,11 +115,13 @@ function OpenLink(url, tab, incog) {
 let midable = {
   stream: (e) => OpenLink(`https://twitch.tv/${e.target.dataset.user_login}`, 1),
   vod: (e) => OpenLink(`https://www.twitch.tv/videos/${e.target.dataset.vod_id}`, 1, 1),
-  "vods-but": (e) =>
+  "vods-but": (e) => {
+    console.log(e);
     axi(`https://api.twitch.tv/helix/videos?type=archive&user_id=${streamer_cache[e.target.dataset.user_login].id}`).then((res) => {
-      OpenLink(`https://www.twitch.tv/videos/${e.target.dataset.vod_id}`, 1, 1);
+      window.open(`https://www.twitch.tv/videos/${res.data[0].id}`);
       window.close();
-    }),
+    });
+  },
 };
 
 let clickable = {
@@ -300,6 +302,7 @@ let clickable = {
         Authorization: `Bearer ${cred.jwt}`,
         "Content-Type": "application/json",
       },
+      keepalive: true,
     });
     save_rdy = 0;
     window.close();
@@ -319,7 +322,7 @@ let clickable = {
       reader.onload = (e) => {
         const contents = e.target.result;
         let data = JSON.parse(contents);
-        console.log('file data:', data)
+        console.log("file data:", data);
         // streamer_cache = data.streamer_cache;
         favorites = data.favorites;
         config = data.config;
@@ -397,7 +400,7 @@ let page_cb = {
     }, {});
 
     let favs = lives.data.filter((e) => favorites[e.user_name.toLowerCase()]);
-    let live_list = config.remove_dups ? lives.data.filter(e => !favorites[e.user_login]) : [...lives.data]
+    let live_list = config.remove_dups ? lives.data.filter((e) => !favorites[e.user_login]) : [...lives.data];
     let str = "";
 
     if (current) {
@@ -847,7 +850,9 @@ async function auth() {
           return main();
         } else {
           //changes = { favorites, config, later }; //chrome.storage.local.get(['favorites', 'config', 'later'])
-          save(changes)
+          console.log("new account so setting:", changes);
+          cache.last_hard_save = Date.now() + 1000 * 60 * 60 * 24 * 13;
+          save({ favorites, config, later });
           bounceSave();
         }
         // console.log("ahjksldfhaik");
@@ -928,8 +933,8 @@ async function save(part, debug, nochange) {
   }
 
   morph ??= {};
-  morph.device = JSON.stringify({device: cred.device});
-  morph.date = JSON.stringify({date: Date.now()});
+  morph.device = JSON.stringify({ device: cred.device });
+  morph.date = JSON.stringify({ date: Date.now() });
   for (let key in changes) {
     let j = {};
     let arr = [j];
@@ -950,7 +955,6 @@ async function save(part, debug, nochange) {
   await chrome.storage.local.set(k);
   // console.log("changes:", changes);
   bounceSave();
-  
 }
 
 function cloudSave() {
@@ -972,6 +976,7 @@ function cloudSave() {
     arr.at(-2)[spl.at(-1)] = changes[key];
     morph[key] = JSON.stringify(j);
   }
+
   fetch(port + "/tsfSave", {
     method: "POST",
     body: JSON.stringify({ changes: morph, $unset: [...$unset] }),
@@ -1012,7 +1017,7 @@ async function cloudLoad(force) {
   console.log("syncing save:", res);
   for (let key in res) {
     if (res[key]) globalThis[key] = res[key];
-  } 
+  }
   await chrome.storage.local.set(res);
   // nav("main");
   // main();
@@ -1032,9 +1037,24 @@ async function main() {
       document.getElementById("in").style.display = "flex";
       document.getElementById("out").style.display = "none";
     }
-    if (Date.now() > (cache.expire || 0)) cache = { expire: Date.now() + 1000 * 60 * 60 * 24 * 13 };
+    let now = Date.now();
+    if (now > (cache.expire || 0)) {
+      cache = { expire: now + 1000 * 60 * 60 * 24 * 13 };
+      save({ cache });
+    }
     // nav("main");
-    cloudLoad().then(res => nav("main")).catch(res => nav("main"));
+    cloudLoad()
+      .then(() => {
+        let now = Date.now();
+        if (now > (cache.last_hard_save || 0)) {
+          cache.last_hard_save = now + 1000 * 60 * 60 * 24 * 13;
+          // save({ favorites, config, later });
+          changes = { favorites, config, later };
+          cloudSave();
+        }
+        nav("main");
+      })
+      .catch((res) => nav("main"));
   });
   // console.log(res)
 }
