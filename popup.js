@@ -509,7 +509,10 @@ let page_cb = {
         `https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`
       ];
       return ($('[page="main"]').innerHTML =
-        '<div class="center" style="font-size: 24px; margin-top: 128px">Twitch API failed try again later</div>');
+        `<div class="center" style="font-size: 24px; margin-top: 128px">Twitch API failed try again later</div>
+        <br/>
+        <div class="center" style="font-size: 24px; margin-top: 128px">Or try logging out and back in &nbsp;  <div style="height: 40px; font-size: 16px;" class="logout button cursor bg-purple">Logout</div></div>
+        `);
     }
     lives_save = lives.data.reduce((acc, e) => {
       acc[e.user_login.toLowerCase()] = e;
@@ -1292,7 +1295,7 @@ async function cloudLoad(force) {
     if (res[key]) globalThis[key] = res[key];
   }
   await chrome.storage.local.set(res);
-  // nav("main");
+  nav("main");
   // main();
 }
 
@@ -1325,11 +1328,10 @@ async function main() {
     save({ cache });
   }
   nav("main");
-  await delay(5000)
+  await delay(850);
 
-  cloudLoad(1)
+  cloudLoad(0)
     .then(() => {
-      
       let now = Date.now();
       if (now > (cache.last_hard_save || 0)) {
         console.log("bi weekly hard saving");
@@ -1337,10 +1339,10 @@ async function main() {
         // save({ favorites, config, later });
         changes = { favorites, config, later };
         cloudSave();
+        // nav("main");
       }
-      nav("main");
     })
-    .catch((res) => nav("main"));
+    .catch((res) => null);
 
   // console.log(res)
 }

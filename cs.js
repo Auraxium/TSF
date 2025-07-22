@@ -388,6 +388,10 @@ async function cloudLoad(force) {
   // main();
 }
 
+async function Delay(secs) {
+  return new Promise((res) => setTimeout(() => res(""), secs));
+}
+
 async function main() {
   // let observer = new MutationObserver(callback);
   // observer.observe(document.body, { childList: true, subtree: true });
@@ -406,7 +410,10 @@ async function main() {
       cache.last_hard_save = now + 1000 * 60 * 60 * 24 * 13;
       save({ favorites, config, later });
     }
-  });
+  }).catch(() => null);
+
+  // while(!document.querySelector(".top-bar")) await Delay(1500);
+  await Delay(4000);
 
   getFavs();
   interval = setInterval(getFavs, 1000 * 60 * 2.5);
@@ -415,9 +422,7 @@ async function main() {
   Delay(1000 * 60 * 1).then(() => clearInterval(observer));
 }
 
-async function Delay(secs) {
-  return new Promise((res) => setTimeout(() => res(""), secs));
-}
+
 
 main();
 
