@@ -117,7 +117,6 @@ let icons = {
 
     return ref;
   },
-
   ctx: (e = {}) => {
     // <div adss style="position: fixed; width: 50px; height: 50px; backgorund-color: green; z-index: 9999999"></div>
     ctx = document.createElement("div");
@@ -133,7 +132,6 @@ let icons = {
 
     return ctx;
   },
-
   test: (e = {}) => {
     // <div adss style="position: fixed; width: 50px; height: 50px; backgorund-color: green; z-index: 9999999"></div>
     let ref = document.createElement("div");
@@ -177,24 +175,40 @@ async function axi(s) {
   return ax;
 }
 
-function save(j, debug) {
-  chrome.storage.local.set(j);
+function save(j, debug, morph) {
+  // chrome.storage.local.set(j);
 
-  let morph;
+  // let morph;
+  let log = new Set();
   for (let key in j) {
-    // console.log(key);
-    if (!change_filt.has(key)) continue;
+    let spl = key.split(".");
+    log.add(spl[0]);
+    if (!change_filt.has(spl[0])) continue;
     morph ??= {};
-    morph[key] = JSON.stringify({ [key]: j[key] });
+    if (j[key] == "$") {
+      $unset.add(key);
+      continue;
+    }
+    let k = {};
+    let arr = [k];
+    spl.forEach((el, i) => {
+      arr[i][el] ??= {};
+      arr[i + 1] = arr[i][el];
+    });
+    arr.at(-2)[spl.at(-1)] = j[key];
+    morph[spl.slice(0, -1).join(".") || key] = JSON.stringify(k);
   }
-  // console.log(morph);
+  chrome.storage.local.set(
+    [...log].reduce((acc, e) => {
+      acc[e] = globalThis[e];
+      return acc;
+    }, {})
+  );
 
   if (morph) {
-    morph.device = JSON.stringify({ device: cred.device });
-    morph.date = JSON.stringify({ date: Date.now() });
     fetch(port + "/tsfSave", {
       method: "POST",
-      body: JSON.stringify({ changes: morph, $unset: [...$unset], source: "cs" }),
+      body: JSON.stringify({ changes: morph, $unset: [...$unset], source: "cs", device: cred.device, date: Date.now() }),
       headers: {
         Authorization: `Bearer ${cred.jwt}`,
         "Content-Type": "application/json",
@@ -204,7 +218,7 @@ function save(j, debug) {
       .then(() => null)
       .catch(() => null);
   }
-
+  morph = null;
   $unset.clear();
   if (debug) console.log(j);
 }
@@ -292,11 +306,17 @@ function check(dontget) {
 async function getFavs(force) {
   // if(force) delete cache[`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`];
 
+  if (!cred?.jwt) return;
   lives = await axi(`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`);
   // console.log('lives', lives);
   if (lives == 0) return;
   // if (lives?.cached && !force && document.querySelector(".tsf-favs")?.offsetHeight > 15) return;
-  if (!lives?.data?.length) return delete cache[`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`];
+  // lives?.status == 401
+  if (!lives?.data?.length)
+    return (document.querySelector(".tsf-favs").innerHTML = `<h2 style="font-size: 14px; padding: 8px">TSF FAVORITES</h2> <div style="width: 100%; display: flex; justify-content: center">
+        <div>Twitch api failed, a relogin may fix it</div>
+         <div class="auth" style="border: 1px solid white; background-color: blac,k; padding: 8px; cursor: pointer;" >Relogin</div>
+        </div>`);
   if (lives.cached && document.querySelector(".tsf-favs")) return;
 
   let { now } = lives;
@@ -369,7 +389,8 @@ async function cloudLoad(force) {
   cache.last_load = now;
   await chrome.storage.local.set({ cache });
   let res = await fetch(port + "/tsfLoad", {
-    method: "GET",
+    method: "POST",
+    body: JSON.stringify({ device: cred.device }),
     headers: {
       Authorization: `Bearer ${cred.jwt}`,
       "Content-Type": "application/json",
@@ -377,8 +398,7 @@ async function cloudLoad(force) {
   })
     .then((res) => res.json())
     .catch(() => null);
-  if (!res) return console.log("no account");
-  if (!force && res.device == cred.device) return console.log("no new save");
+  if (!res) return console.log("no new save");
   console.log("syncing save:", res);
   for (let key in res) {
     if (res[key]) globalThis[key] = res[key];
@@ -396,21 +416,30 @@ async function main() {
   // let observer = new MutationObserver(callback);
   // observer.observe(document.body, { childList: true, subtree: true });
   // return
+  // console.log("TSF: GETTING KEYS");
   const keys = ["streamer_cache", "favorites", "cred", "config", "later", "channels", "cache"];
   let res = await chrome.storage.local.get(keys);
   for (const key of keys) if (res[key]) globalThis[key] = res[key];
   if (!config.cs) return console.log("TSF cs disabled");
-  if (Date.now() > (cache.expire || 0)) cache = { expire: Date.now() + 1000 * 60 * 60 * 24 * 13 };
+  // if (Date.now() > (cache.expire || 0)) cache = { expire: Date.now() + 1000 * 60 * 60 * 24 * 13 };
 
   chrome.runtime.sendMessage({ open: window.location.href });
 
-  await cloudLoad().then(() => {
-    let now = Date.now();
-    if (cred?.jwt && now > (cache.last_hard_save || 0)) {
-      cache.last_hard_save = now + 1000 * 60 * 60 * 24 * 13;
-      save({ favorites, config, later });
-    }
-  }).catch(() => null);
+  await cloudLoad()
+    .then(() => {
+      let now = Date.now();
+      if (cred?.jwt && now > (cache.last_hard_save || 0)) {
+        console.log("bi weekly hard saving");
+        cache.last_hard_save = now + 1000 * 60 * 60 * 24 * 13;
+        // save({ cache });
+        save({ favorites, config, later, cache });
+      }
+      if (now > (cache.expire || 0)) {
+        cache = { expire: now + 1000 * 60 * 60 * 24 * 13 };
+        save({ cache });
+      }
+    })
+    .catch(() => null);
 
   // while(!document.querySelector(".top-bar")) await Delay(1500);
   await Delay(4000);
@@ -421,8 +450,6 @@ async function main() {
   observer = setInterval(check, 2000);
   Delay(1000 * 60 * 1).then(() => clearInterval(observer));
 }
-
-
 
 main();
 
@@ -479,6 +506,7 @@ let clickable = {
         <path stroke="none" d="M0 0h24v24H0z" fill="none" />
         <path d="M8.243 7.34l-6.38 .925l-.113 .023a1 1 0 0 0 -.44 1.684l4.622 4.499l-1.09 6.355l-.013 .11a1 1 0 0 0 1.464 .944l5.706 -3l5.693 3l.1 .046a1 1 0 0 0 1.352 -1.1l-1.091 -6.355l4.624 -4.5l.078 -.085a1 1 0 0 0 -.633 -1.62l-6.38 -.926l-2.852 -5.78a1 1 0 0 0 -1.794 0l-2.853 5.78z" />
       </svg>`;
+      save({ [`favorites.${user_login}`]: 1 });
     } else {
       delete favorites[user_login];
       $unset.add(`favorites.${user_login}`);
@@ -486,9 +514,9 @@ let clickable = {
         <path stroke="none" d="M0 0h24v24H0z" fill="none" />
         <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
       </svg>`;
+      save({ [`favorites.${user_login}`]: "$" });
     }
 
-    save({ favorites });
     getFavs(1);
   },
   "icon-tabler-movie": (e) => {
@@ -508,21 +536,21 @@ let clickable = {
       let { user_login, vod_id } = later[ind];
       delete later[user_login];
       delete later[vod_id];
-      $unset.add(`later.${vod_id}`);
-      $unset.add(`later.${user_login}`);
+      save({ [`later.${vod_id}`]: "$", [`later.${user_login}`]: "$" });
       // console.log(later[ind], later);
     } else {
       // wl off, turn it on
       el.setAttribute("stroke", lon);
 
       if (window.location.href.includes("videos") && user_login == document.querySelector("h1.tw-title")?.innerHTML.toLowerCase()) {
-        later[ind] = {
+        let vod = {
           date: Date.now(),
           user_login: current_name,
           vod_id: ind,
         };
+        later[ind] = vod;
         // console.log(later[ind], later);
-        save({ later });
+        save({ [`later.${ind}`]: vod });
         return;
       }
 
@@ -538,21 +566,18 @@ let clickable = {
           return console.log("loss:", res);
         }
         let date = Date.now() + 1000 * 60 * 60 * 10;
-        later[res.data[0].id] = {
+        let vod = {
           date,
           vod_id: res.data[0].id,
           user_login,
         };
-        later[user_login] = {
-          date,
-          vod_id: res.data[0].id,
-          user_login,
-        };
-        save({ later });
+        later[res.data[0].id] = vod;
+        later[user_login] = vod;
+        save({ [`later.${user_login}`]: vod, [`later.${res.data[0].id}`]: vod });
         // console.log(later);
       });
     }
-    save({ later });
+    // save({ later });
   },
   auth: (e) => {
     let popup = window.open("https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=0helgn8mxggk3ffv53sxgqrmkdojb3&redirect_uri=https://misc.auraxium.dev/twotch&scope=user%3Aread%3Afollows&state=${window.location.href}", "popup", "popup=true");
@@ -604,8 +629,11 @@ let clickable = {
             await chrome.storage.local.set({ cache });
             return main();
           } else {
-            //changes = { favorites, config, later }; //chrome.storage.local.get(['favorites', 'config', 'later'])
-            cache.last_hard_save = Date.now() + 1000 * 60 * 60 * 24 * 13;
+            // changes = { favorites, config, later }; //chrome.storage.local.get(['favorites', 'config', 'later'])
+            let now = Date.now();
+            cache.last_hard_save = now + 1000 * 60 * 60 * 24 * 13;
+            cache.expire = now + 1000 * 60 * 60 * 24 * 13;
+            await chrome.storage.local.set({ cache });
             save({ favorites, config, later });
           }
           // console.log("ahjksldfhaik");
