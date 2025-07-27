@@ -17,8 +17,8 @@ let save_map = {
   cache,
 };
 
-// let port = "http://localhost:3145";
-let port = "https://misc.auraxium.dev";
+let port = "http://localhost:3145";
+// let port = "https://misc.auraxium.dev";
 let lives_save = {};
 let temp;
 let icon_size = 28;
@@ -910,10 +910,9 @@ function hardSave() {
   if (!cred.jwt) return;
 }
 
-async function save(part, debug, nochange) {
+async function save(part, debug) {
   let log = new Set();
-  let j = {};
-  part = { ...part };
+  // part = { ...part };
   for (let key in part) {
     let arr = [changes];
     let spl = key.split(".");
@@ -941,19 +940,6 @@ async function save(part, debug, nochange) {
     $unset.delete(key);
   }
 
-  morph ??= {};
-  for (let key in changes) {
-    let j = {};
-    let arr = [j];
-    let spl = key.split(".");
-    spl.forEach((el, i) => {
-      arr[i][el] ??= {};
-      arr[i + 1] = arr[i][el];
-    });
-    arr.at(-2)[spl.at(-1)] = changes[key];
-    morph[key] = JSON.stringify(j);
-  }
-
   // console.log("logs:", [...log]);
   let k = [...log].reduce((acc, e) => {
     acc[e] = globalThis[e];
@@ -967,24 +953,10 @@ async function save(part, debug, nochange) {
 function cloudSave() {
   if (!Object.keys(changes).length && !$unset.size) return;
   console.log("cloud saving:", changes);
-  console.log("morph:", morph);
-  morph ??= {};
-
-  for (let key in changes) {
-    let j = {};
-    let arr = [j];
-    let spl = key.split(".");
-    spl.forEach((el, i) => {
-      arr[i][el] ??= {};
-      arr[i + 1] = arr[i][el];
-    });
-    arr.at(-2)[spl.at(-1)] = changes[key];
-    morph[key] = JSON.stringify(j);
-  }
 
   fetch(port + "/tsfSave", {
     method: "POST",
-    body: JSON.stringify({ changes: morph, $unset: [...$unset], device: cred.device, date: Date.now() }),
+    body: JSON.stringify({ changes, $unset: [...$unset], device: cred.device, date: Date.now() }),
     headers: {
       Authorization: `Bearer ${cred.jwt}`,
       "Content-Type": "application/json",
@@ -1074,8 +1046,7 @@ main();
 
 //#region EVENTS
 window.addEventListener("unload", () => {
-  if (!save_rdy) return;
-  navigator.sendBeacon(port + "/tsfSave", JSON.stringify({ changes: morph, $unset: [...$unset], jwt: cred.jwt, device: cred.device, date: Date.now() }));
+  if (save_rdy) navigator.sendBeacon(port + "/tsfSave", JSON.stringify({ changes, $unset: [...$unset], jwt: cred.jwt, device: cred.device, date: Date.now() }));
   // fetch(port + "/tsfSave", {
   //   method: "POST",
   //   body: JSON.stringify({ changes: morph, $unset: [...$unset] }),
