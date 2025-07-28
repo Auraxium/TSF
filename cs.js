@@ -25,7 +25,6 @@ let $unset = new Set();
 var changes;
 
 let observer;
-
 let ctx = {};
 let channels = {};
 let cur_ctx;
@@ -185,14 +184,6 @@ function save(part, debug) {
     log.add(spl[0]);
     if (!change_filt.has(spl[0])) continue;
     changes ??= {};
-    let path = spl.slice(0, -1).join(".");
-    if (!path) {
-      if (part[key] == "$") {
-        delete changes[key];
-        $unset.add(key);
-      } else changes[key] = part[key];
-      continue;
-    }
     let arr = [changes];
     spl.forEach((el, i) => {
       arr[i][el] ??= {};

@@ -919,14 +919,6 @@ async function save(part, debug) {
     log.add(spl[0]);
     if (!change_filt.has(spl[0])) continue;
     save_rdy = 1;
-    let path = spl.slice(0, -1).join(".");
-    if (!path) {
-      if (part[key] == "$") {
-        delete changes[key];
-        $unset.add(key);
-      } else changes[key] = part[key];
-      continue;
-    }
     spl.forEach((el, i) => {
       arr[i][el] ??= {};
       arr[i + 1] = arr[i][el];
@@ -964,7 +956,6 @@ function cloudSave() {
   })
     .then(console.log)
     .catch(console.log);
-  morph = null;
   changes = {};
   $unset.clear();
   save_rdy = 0;
