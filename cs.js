@@ -7,8 +7,8 @@ var later = {};
 var config = { cs: 1 };
 var cache = {};
 
-// let port = "http://localhost:3145";
-let port = "https://misc.auraxium.dev";
+let port = "http://localhost:3145";
+// let port = "https://misc.auraxium.dev";
 let sidebar_query = ".Layout-sc-1xcs6mc-0.dtSdDz";
 let list = [".haGrcr", '[role="group"]'];
 let imgs = [];
@@ -22,6 +22,7 @@ let lon = "#813ade";
 let la;
 let change_filt = new Set(["config", "favorites", "later"]);
 let $unset = new Set();
+var changes;
 
 let observer;
 
@@ -175,40 +176,48 @@ async function axi(s) {
   return ax;
 }
 
-function save(j, debug, morph) {
+function save(part, debug) {
   // chrome.storage.local.set(j);
 
-  // let morph;
   let log = new Set();
-  for (let key in j) {
+  for (let key in part) {
     let spl = key.split(".");
     log.add(spl[0]);
     if (!change_filt.has(spl[0])) continue;
-    morph ??= {};
-    if (j[key] == "$") {
-      $unset.add(key);
+    changes ??= {};
+    let path = spl.slice(0, -1).join(".");
+    if (!path) {
+      if (part[key] == "$") {
+        delete changes[key];
+        $unset.add(key);
+      } else changes[key] = part[key];
       continue;
     }
-    let k = {};
-    let arr = [k];
+    let arr = [changes];
     spl.forEach((el, i) => {
       arr[i][el] ??= {};
       arr[i + 1] = arr[i][el];
     });
-    arr.at(-2)[spl.at(-1)] = j[key];
-    morph[spl.slice(0, -1).join(".") || key] = JSON.stringify(k);
+    if (part[key] == "$") {
+      $unset.add(key);
+      delete arr.at(-2)[spl.at(-1)];
+      continue;
+    }
+    arr.at(-2)[spl.at(-1)] = part[key];
+    $unset.delete(key);
   }
-  chrome.storage.local.set(
-    [...log].reduce((acc, e) => {
-      acc[e] = globalThis[e];
-      return acc;
-    }, {})
-  );
 
-  if (morph) {
+  let k = [...log].reduce((acc, e) => {
+    acc[e] = globalThis[e];
+    return acc;
+  }, {});
+  chrome.storage.local.set(k);
+
+  console.log(changes)
+  if (changes) {
     fetch(port + "/tsfSave", {
       method: "POST",
-      body: JSON.stringify({ changes: morph, $unset: [...$unset], source: "cs", device: cred.device, date: Date.now() }),
+      body: JSON.stringify({ changes, $unset: [...$unset], source: "cs", device: cred.device, date: Date.now() }),
       headers: {
         Authorization: `Bearer ${cred.jwt}`,
         "Content-Type": "application/json",
@@ -218,9 +227,10 @@ function save(j, debug, morph) {
       .then(() => null)
       .catch(() => null);
   }
-  morph = null;
+  changes = null;
   $unset.clear();
   if (debug) console.log(j);
+  getFavs()
 }
 
 function vc(s) {
@@ -289,12 +299,11 @@ function check(dontget) {
     side_el.insertAdjacentHTML(
       "afterbegin",
       `<div class="tsf-favs" style="padding: 2px; margin-top: 9px">
-      ${
-        !cred.jwt
-          ? `<h2 style="font-size: 14px; padding: 8px">TSF FAVORITES</h2> <div style="width: 100%; display: flex; justify-content: center">
+      ${!cred.jwt
+        ? `<h2 style="font-size: 14px; padding: 8px">TSF FAVORITES</h2> <div style="width: 100%; display: flex; justify-content: center">
          <div class="auth" style="border: 1px solid white; background-color: blac,k; padding: 8px; cursor: pointer;" >Authorize</div>
         </div> `
-          : lives_str
+        : lives_str
       }
       </div>`
     );

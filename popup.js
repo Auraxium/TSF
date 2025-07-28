@@ -940,7 +940,6 @@ async function save(part, debug) {
     $unset.delete(key);
   }
 
-  // console.log("logs:", [...log]);
   let k = [...log].reduce((acc, e) => {
     acc[e] = globalThis[e];
     return acc;
