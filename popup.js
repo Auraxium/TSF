@@ -17,8 +17,8 @@ let save_map = {
   cache,
 };
 
-let port = "http://localhost:3145";
-// let port = "https://misc.auraxium.dev";
+// let port = "http://localhost:3145";
+let port = "https://misc.auraxium.dev";
 let lives_save = {};
 let temp;
 let icon_size = 28;
