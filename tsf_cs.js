@@ -7,9 +7,8 @@ var later = {};
 var config = { cs: 1 };
 var cache = {};
 
-let port = "http://localhost:3145";
-// let port = "https://misc.auraxium.dev";
-let sidebar_query = ".Layout-sc-1xcs6mc-0.dtSdDz";
+// let port = "http://localhost:3145";
+let port = "https://misc.auraxium.dev";
 let list = [".haGrcr", '[role="group"]'];
 let imgs = [];
 let interval;
@@ -282,6 +281,8 @@ function stream(e, now = Date.now()) {
   </a>`;
 }
 
+//
+let sidebar_query = 'div.Layout-sc-1xcs6mc-0.dmulkQ'//".Layout-sc-1xcs6mc-0.dtSdDz";
 function check(dontget) {
   let tsf_el = document.querySelector(".tsf-favs");
   let side_el = document.querySelector(sidebar_query);
@@ -303,12 +304,41 @@ function check(dontget) {
   addBar();
 }
 
+//bar where follow, sub, giftsub, etc are
+let laq = 'div.Layout-sc-1xcs6mc-0.dKLOKa'//"div.Layout-sc-1xcs6mc-0.hnHqxZ"; //'[data-target="channel-header-right"]' //'.Layout-sc-1xcs6mc-0.ktLpvM'
+async function addBar() { // controls buttons for vods, wl, and favorite
+  if (document.querySelector("svg[data-fill]")) return;
+
+  console.log("searching for staringing");
+
+  while (!document.querySelector(laq)) {
+    // console.log("searching for laq", document.querySelector(laq));
+    await Delay(1000);
+  }
+  // console.log("found laq:", document.querySelector(laq));
+
+  // while (!document.querySelector('.Layout-sc-1xcs6mc-0.lmNILC')) {
+  //   console.log('searching for laq container', document.querySelector(laq));
+  //   await Delay(1000);
+  // }
+  // console.log('and therfore found layout:', document.querySelector('.Layout-sc-1xcs6mc-0.lmNILC'))
+
+  la = document.querySelector(laq);
+  current_name = document.querySelector("h1.tw-title").innerHTML.toLowerCase();
+
+  if (document.querySelector("svg[data-fill]")) return;
+
+  la.prepend(icons.later());
+  la.prepend(icons.vods());
+  la.prepend(icons.star());
+  document.querySelector(".Layout-sc-1xcs6mc-0").prepend(icons.ctx());
+}
+
 async function getFavs(force) {
   // if(force) delete cache[`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`];
 
-  if (!cred?.jwt) return;
-  lives = await axi(`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`);
-  // console.log('lives', lives);
+  if (!cred?.jwt) return console.log('getFavs fail: no jwt');
+  lives = await axi(`https://api.twitch.tv/helix/streams/followed?user_id=${cred.id}`); //caches
   if (lives == 0) return;
   // if (lives?.cached && !force && document.querySelector(".tsf-favs")?.offsetHeight > 15) return;
   // lives?.status == 401
@@ -317,7 +347,7 @@ async function getFavs(force) {
         <div>Twitch api failed, a relogin may fix it</div>
          <div class="auth" style="border: 1px solid white; background-color: blac,k; padding: 8px; cursor: pointer;" >Relogin</div>
         </div>`);
-  if (lives.cached && document.querySelector(".tsf-favs")) return;
+  if (!force && lives.cached && document.querySelector(".tsf-favs")) return;
 
   let { now } = lives;
   channels = lives.data.reduce((acc, e) => {
@@ -352,35 +382,6 @@ async function getFavs(force) {
   // document.querySelector("#tsf_head").appendChild(icons.refresh());
 }
 
-async function addBar() {
-  if (document.querySelector("svg[data-fill]")) return;
-
-  let laq = "div.Layout-sc-1xcs6mc-0.hnHqxZ"; //'[data-target="channel-header-right"]' //'.Layout-sc-1xcs6mc-0.ktLpvM'
-  // console.log("searching for staringing");
-
-  while (!document.querySelector(laq)) {
-    // console.log("searching for laq", document.querySelector(laq));
-    await Delay(1000);
-  }
-  // console.log("found laq:", document.querySelector(laq));
-
-  // while (!document.querySelector('.Layout-sc-1xcs6mc-0.lmNILC')) {
-  //   console.log('searching for laq container', document.querySelector(laq));
-  //   await Delay(1000);
-  // }
-  // console.log('and therfore found layout:', document.querySelector('.Layout-sc-1xcs6mc-0.lmNILC'))
-
-  la = document.querySelector(laq);
-  current_name = document.querySelector("h1.tw-title").innerHTML.toLowerCase();
-
-  if (document.querySelector("svg[data-fill]")) return;
-
-  la.prepend(icons.later());
-  la.prepend(icons.vods());
-  la.prepend(icons.star());
-  document.querySelector(".Layout-sc-1xcs6mc-0").prepend(icons.ctx());
-}
-
 async function cloudLoad(force) {
   let now = Date.now();
   let cd = now - (cache.last_load || 0);
@@ -388,9 +389,12 @@ async function cloudLoad(force) {
   else if (!force && cd < 1000 * 60 * 10) return console.log("too soon load");
   cache.last_load = now;
   await chrome.storage.local.set({ cache });
+  // const keys = ["streamer_cache", "favorites", "cred", "config", "later", "channels", "cache"];
+  const keys = ["favorites", "cred", "config", "later", "channels", ];
+  let raw = await chrome.storage.local.get(keys);
   let res = await fetch(port + "/tsfLoad", {
     method: "POST",
-    body: JSON.stringify({ device: cred.device }),
+    body: JSON.stringify({ device: cred.device, cleanup_request: 1, raw }),
     headers: {
       Authorization: `Bearer ${cred.jwt}`,
       "Content-Type": "application/json",
@@ -398,7 +402,20 @@ async function cloudLoad(force) {
   })
     .then((res) => res.json())
     .catch(() => null);
+    
   if (!res) return console.log("no new save");
+  if (res?.cleanup_response) {
+    await chrome.storage.local.set(res.cleanup_response);
+    fetch(port + "/tsfClean", {
+      method: "POST",
+      body: JSON.stringify({ device: cred.device, raw }),
+      headers: {
+        Authorization: `Bearer ${cred.jwt}`,
+        "Content-Type": "application/json",
+      },
+    })
+    return;
+  }
   console.log("syncing save:", res);
   for (let key in res) {
     if (res[key]) globalThis[key] = res[key];
@@ -425,21 +442,21 @@ async function main() {
 
   chrome.runtime.sendMessage({ open: window.location.href });
 
-  await cloudLoad()
-    .then(() => {
-      let now = Date.now();
-      if (cred?.jwt && now > (cache.last_hard_save || 0)) {
-        console.log("bi weekly hard saving");
-        cache.last_hard_save = now + 1000 * 60 * 60 * 24 * 13;
-        // save({ cache });
-        save({ favorites, config, later, cache });
-      }
-      if (now > (cache.expire || 0)) {
-        cache = { expire: now + 1000 * 60 * 60 * 24 * 13 };
-        save({ cache });
-      }
-    })
-    .catch(() => null);
+  // await cloudLoad()
+  //   .then(() => {
+  //     let now = Date.now();
+  //     if (cred?.jwt && now > (cache.last_hard_save || 0)) {
+  //       console.log("bi weekly hard saving");
+  //       cache.last_hard_save = now + 1000 * 60 * 60 * 24 * 13;
+  //       // save({ cache });
+  //       save({ favorites, config, later, cache });
+  //     }
+  //     if (now > (cache.expire || 0)) {
+  //       cache = { expire: now + 1000 * 60 * 60 * 24 * 13 };
+  //       save({ cache });
+  //     }
+  //   })
+  //   .catch(() => null);
 
   // while(!document.querySelector(".top-bar")) await Delay(1500);
   await Delay(4000);
@@ -641,7 +658,7 @@ let clickable = {
           main();
           // window.location.reload()
         })
-        .catch(() => null);
+        .catch(console.log);
     };
 
     window.addEventListener("message", auth, false);
@@ -706,13 +723,10 @@ document.addEventListener("mousedown", (e) => {
   if (e.target?.classList) [...e.target.classList].forEach((el) => midable[el] && midable[el](e));
 });
 
-// cmt = {
-//   'username': (msg, res) => res(document.querySelector('h1.tw-title')?.innerHTML.toLowerCase() || null),
-// };
-
 // chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 //   cmt[message.type] && cmt[message.type](message, sendResponse, sender);
 // });
+
 
 // chrome.runtime.sendMessage
 

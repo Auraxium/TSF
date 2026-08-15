@@ -98,8 +98,8 @@ let contexts = {
       ctrl
         ? window.open(`https://www.twitch.tv/videos/${res.data[0].id}`)
         : chrome.runtime.sendMessage({
-            tab: `https://www.twitch.tv/videos/${res.data[0].id}`,
-          });
+          tab: `https://www.twitch.tv/videos/${res.data[0].id}`,
+        });
       window.close();
     });
   },
@@ -172,6 +172,7 @@ let clickable = {
     window.open(`https://www.twitch.tv/${e.target.dataset.user_name}/videos?filter=archives&sort=time`);
   },
   stream: (e) => {
+    chrome.runtime.sendMessage({ open: `https://twitch.tv/${e.target.dataset.user_login}` });
     if (e.ctrlKey) return window.open(`https://twitch.tv/${e.target.dataset.user_login}`);
     chrome.runtime.sendMessage({
       tab: `https://twitch.tv/${e.target.dataset.user_login}`,
@@ -179,6 +180,7 @@ let clickable = {
     window.close();
   },
   vod: (e) => {
+    chrome.runtime.sendMessage({ open: `https://www.twitch.tv/videos/${e.target.dataset.vod_id}` });
     if (e.ctrlKey) return window.open(`https://www.twitch.tv/videos/${e.target.dataset.vod_id}`);
     chrome.runtime.sendMessage({
       tab: `https://www.twitch.tv/videos/${e.target.dataset.vod_id}`,
@@ -814,17 +816,20 @@ async function auth() {
     if (event.origin != "https://misc.auraxium.dev") return;
     // if (!event.data?.slice || event.data.slice(0, 4) != 'tsf_') return;
     let ind = event.data.indexOf("access_token=");
+    console.log(1)
     if (ind == -1) {
       window.removeEventListener("message", auth);
       popup.close();
       return;
     }
+    console.log(2)
     let ac = event.data.slice(ind + 13, event.data.length);
     if (ac == "null") {
       window.removeEventListener("message", auth);
       popup.close();
       return;
     }
+    console.log(3)
     // console.log('ac:', ac);
     window.removeEventListener("message", auth);
     popup.close();
@@ -840,6 +845,7 @@ async function auth() {
       .then((res) => res.json())
       .then(async (res) => {
         console.log(1);
+        let now = Date.now()
         cred = {
           ...cred,
           ...res.cred,
@@ -980,11 +986,18 @@ async function cloudLoad(force) {
   })
     .then((res) => res.json())
     .catch(console.log);
-  if (!res) return console.log("no new save");
-  // if (!force && res.device == cred.device) return console.log("no new save");
+  if (!res) {
+    cred.offline = 1;
+    await chrome.storage.local.set({cred});
+    // console.log('??????????')
+    document.getElementById("in").style.display = "flex";
+    document.getElementById("out").style.display = "none";
+    return nav("main");
+  }
+  // if (!force && res.device == cred.device) return console.log("no new save");f
   console.log("syncing save:", res);
   for (let key in res) {
-    if (res[key]) globalThis[key] = res[key];
+    // console.log(res)
   }
   await chrome.storage.local.set(res);
   nav("main");
@@ -998,7 +1011,10 @@ async function main() {
   let res = await chrome.storage.local.get(keys);
   for (const key of keys) if (res[key]) globalThis[key] = res[key];
 
-  if (!cred || !cred.access_token || !cred.jwt) {
+  if (cred?.offline) {
+    document.getElementById("in").style.display = "flex";
+    document.getElementById("out").style.display = "none";
+  } else if (!cred || !cred.access_token || !cred.jwt) {
     document.getElementById("out").style.display = "flex";
     document.getElementById("in").style.display = "none";
     return;
@@ -1010,25 +1026,26 @@ async function main() {
   nav("main");
   await delay(850);
 
-  cloudLoad()
-    .then(() => {
-      if (now > (cache.last_hard_save || 0)) {
-        console.log("bi weekly hard saving");
-        cache.last_hard_save = now + 1000 * 60 * 60 * 24 * 13;
-        save({ cache });
-        changes = { favorites, config, later };
-        cloudSave();
-        // nav("main");
-      }
-      if (now > (cache.expire || 0)) {
-        cache = { expire: now + 1000 * 60 * 60 * 24 * 13 };
-        save({ cache });
-      }
-    })
-    .catch((res) => null);
+  // cloudLoad()
+  //   .then(() => {
+  //     if (now > (cache.last_hard_save || 0)) {
+  //       console.log("bi weekly hard saving");
+  //       cache.last_hard_save = now + 1000 * 60 * 60 * 24 * 13;
+  //       save({ cache });
+  //       changes = { favorites, config, later };
+  //       cloudSave();
+  //       // nav("main");
+  //     }
+  //     if (now > (cache.expire || 0)) {
+  //       cache = { expire: now + 1000 * 60 * 60 * 24 * 13 };
+  //       save({ cache });
+  //     }
+  //   })
+  //   .catch((res) => null);
 
   // console.log(res)
 }
+
 
 main();
 
